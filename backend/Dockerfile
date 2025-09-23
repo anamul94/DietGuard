@@ -2,11 +2,23 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
-RUN pip install uv && uv sync --frozen
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements
+COPY pyproject.toml uv.lock ./
+
+# Install uv and dependencies
+RUN pip install uv
+RUN uv sync --frozen
+
+# Copy application code
 COPY . .
 
+# Expose port
 EXPOSE 8000
 
-CMD ["uv", "run", "python", "main.py"]
+# Run the application
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
