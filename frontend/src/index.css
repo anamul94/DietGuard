@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+body {
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  background: linear-gradient(135deg, #f0f9ff 0%, #f0fdf4 100%);
+  min-height: 100vh;
+}
+
+.medical-gradient {
+  background: linear-gradient(135deg, #0ea5e9 0%, #22c55e 100%);
+}
+
+.glass-effect {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.markdown-content {
+  @apply max-w-none;
+}
+
+.markdown-content h1 {
+  @apply text-2xl font-bold text-medical-700 mb-4;
+}
+
+.markdown-content h2 {
+  @apply text-xl font-semibold text-nutrition-700 mb-3 flex items-center gap-2;
+}
+
+.markdown-content table {
+  @apply w-full border-collapse mb-4;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.markdown-content th {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-weight: 600;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  text-align: left;
+}
+
+.markdown-content td {
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  background-color: white;
+  vertical-align: top;
+}
+
+.markdown-content tbody tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+.markdown-content tbody tr:hover {
+  background-color: #f0f9ff;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-yellow-400 bg-yellow-50 p-4 my-4 rounded-r-lg;
+}
+
+.markdown-content strong {
+  @apply text-red-600 font-bold;
+}
+
+.markdown-content code {
+  @apply bg-gray-100 px-2 py-1 rounded text-sm font-mono;
+}
