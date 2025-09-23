@@ -18,7 +18,7 @@ services:
       dockerfile: Dockerfile
     container_name: dietguard-backend
     ports:
-      - "8000:8000"
+      - "8010:8000"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -40,8 +40,8 @@ services:
     ports:
       - "3003:3000"
     environment:
-      - REACT_APP_API_URL=http://localhost:8000
-      - REACT_APP_DOMAIN=localhost:3003
+      - REACT_APP_API_URL=http://15.207.68.194:8010/
+      - REACT_APP_DOMAIN=http://15.207.68.194:3003
     depends_on:
       - backend
     networks:
