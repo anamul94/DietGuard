@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { FileText, Upload, Loader, CheckCircle, AlertCircle } from 'lucide-react';
+import { FileText, Upload, Loader, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { uploadReport } from '../utils/api';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import BackButton from '../components/BackButton';
 
 const UploadReportPage: React.FC = () => {
   const [mobileOrEmail, setMobileOrEmail] = useState('');
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!files || files.length === 0) {
+    if (files.length === 0) {
       setError('Please select files to upload');
       return;
     }
@@ -23,7 +24,9 @@ const UploadReportPage: React.FC = () => {
     
     try {
       console.log('Uploading files:', files.length, 'for user:', mobileOrEmail);
-      const response = await uploadReport(mobileOrEmail, files);
+      const fileList = files as any;
+      fileList.length = files.length;
+      const response = await uploadReport(mobileOrEmail, fileList);
       console.log('Upload response:', response);
       setResult(response);
     } catch (err: any) {
@@ -38,6 +41,7 @@ const UploadReportPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
+        <BackButton />
         {/* Header */}
         <div className="text-center mb-8">
           <div className="bg-medical-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
@@ -74,7 +78,11 @@ const UploadReportPage: React.FC = () => {
                   type="file"
                   multiple
                   accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => setFiles(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                    }
+                  }}
                   className="hidden"
                   id="file-upload"
                 />
@@ -84,17 +92,25 @@ const UploadReportPage: React.FC = () => {
                 </label>
                 <p className="text-sm text-gray-500 mt-2">PDF, JPG, PNG up to 10MB each • Multiple files supported</p>
               </div>
-              {files && (
+              {files.length > 0 && (
                 <div className="mt-3 bg-blue-50 rounded-lg p-3">
                   <p className="text-sm font-medium text-blue-800 mb-2">
                     {files.length} file(s) selected for analysis:
                   </p>
-                  <div className="space-y-1">
-                    {Array.from(files).map((file, index) => (
-                      <div key={index} className="flex items-center space-x-2 text-sm text-blue-700">
-                        <FileText className="h-4 w-4" />
-                        <span>{file.name}</span>
-                        <span className="text-blue-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                  <div className="space-y-2">
+                    {files.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between bg-white rounded p-2 border">
+                        <div className="flex items-center space-x-2 text-sm text-blue-700">
+                          <FileText className="h-4 w-4" />
+                          <span>{file.name}</span>
+                          <span className="text-blue-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                        </div>
+                        <button
+                          onClick={() => setFiles(prev => prev.filter((_, i) => i !== index))}
+                          className="text-red-500 hover:text-red-700 p-1"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
                     ))}
                   </div>
