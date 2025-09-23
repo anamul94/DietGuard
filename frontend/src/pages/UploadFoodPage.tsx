@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Upload, Loader, CheckCircle, AlertCircle, QrCode, Smartphone } from 'lucide-react';
+import { Camera, Upload, Loader, CheckCircle, AlertCircle, QrCode, Smartphone, X } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { uploadFood } from '../utils/api';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import BackButton from '../components/BackButton';
 
 const UploadFoodPage: React.FC = () => {
   const [mobileOrEmail, setMobileOrEmail] = useState('');
   const [mealTime, setMealTime] = useState('');
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
@@ -24,11 +25,12 @@ const UploadFoodPage: React.FC = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const currentUrl = window.location.href;
+  const domain = process.env.REACT_APP_DOMAIN || 'localhost:3000';
+  const currentUrl = `http://${domain}/upload-food`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!files || files.length === 0) {
+    if (files.length === 0) {
       setError('Please select food images to upload');
       return;
     }
@@ -37,7 +39,9 @@ const UploadFoodPage: React.FC = () => {
     setError('');
     
     try {
-      const response = await uploadFood(mobileOrEmail, mealTime, files);
+      const fileList = files as any;
+      fileList.length = files.length;
+      const response = await uploadFood(mobileOrEmail, mealTime, fileList);
       setResult(response);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Upload failed');
@@ -49,6 +53,7 @@ const UploadFoodPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
+        <BackButton />
         {/* Header */}
         <div className="text-center mb-8">
           <div className="bg-nutrition-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
@@ -133,7 +138,11 @@ const UploadFoodPage: React.FC = () => {
                   type="file"
                   multiple
                   accept=".jpg,.jpeg,.png"
-                  onChange={(e) => setFiles(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                    }
+                  }}
                   className="hidden"
                   id="food-upload"
                 />
@@ -143,11 +152,28 @@ const UploadFoodPage: React.FC = () => {
                 </label>
                 <p className="text-sm text-gray-500 mt-2">JPG, PNG up to 10MB each</p>
               </div>
-              {files && (
-                <div className="mt-2">
-                  <p className="text-sm text-gray-600">
-                    {files.length} image(s) selected
+              {files.length > 0 && (
+                <div className="mt-3 bg-blue-50 rounded-lg p-3">
+                  <p className="text-sm font-medium text-blue-800 mb-2">
+                    {files.length} image(s) selected:
                   </p>
+                  <div className="space-y-2">
+                    {files.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between bg-white rounded p-2 border">
+                        <div className="flex items-center space-x-2 text-sm text-blue-700">
+                          <Camera className="h-4 w-4" />
+                          <span>{file.name}</span>
+                          <span className="text-blue-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                        </div>
+                        <button
+                          onClick={() => setFiles(prev => prev.filter((_, i) => i !== index))}
+                          className="text-red-500 hover:text-red-700 p-1"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

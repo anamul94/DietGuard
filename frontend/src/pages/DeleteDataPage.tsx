@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
 import { deleteReport } from '../utils/api';
+import BackButton from '../components/BackButton';
 
 const DeleteDataPage: React.FC = () => {
   const [userId, setUserId] = useState('');
@@ -33,6 +34,7 @@ const DeleteDataPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
+        <BackButton />
         {/* Header */}
         <div className="text-center mb-8">
           <div className="bg-red-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
