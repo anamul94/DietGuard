@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
 from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
@@ -8,6 +9,15 @@ from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.utils.redis_utils import RedisClient
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")

@@ -48,17 +48,18 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
             "**CLINICAL FINDINGS**\n"
             "**LABORATORY RESULTS**\n"
             "**DIAGNOSTIC IMPRESSIONS**\n"
-            "**MEDICAL RECOMMENDATIONS**\n"
-            "**FOLLOW-UP REQUIREMENTS**\n\n"
             "Maintain professional medical terminology and clinical accuracy."
+            "**Output in markdown format with headings and bullet points where appropriate."
+            "**Highlight critical findings clearly."
+            "Highlight key values in the LABORATORY RESULTS section."
+            "No need MEDICAL RECOMMENDATIONS, FOLLOW-UP REQUIREMENTS just extract information"
         )
     }
-
 
     message = {
         "role": "user",
         "content": [
-            {"type": "text", "text": "Extract all clinically relevant information."},
+            {"type": "text", "text": "Extract all clinically relevant information. and show info in a structured format."},
             {
                 "type": type,
                 "source_type": "base64",
