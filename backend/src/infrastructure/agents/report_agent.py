@@ -62,8 +62,9 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
             {
                 "type": type,
                 "source_type": "base64",
-                "data": data,
                 "mime_type": mime_type,
+                "data": data,
+                "name": "report"
             },
         ],
     }
