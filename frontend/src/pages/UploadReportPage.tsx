@@ -24,9 +24,12 @@ const UploadReportPage: React.FC = () => {
     
     try {
       console.log('Uploading files:', files.length, 'for user:', mobileOrEmail);
-      const fileList = files as any;
-      fileList.length = files.length;
-      const response = await uploadReport(mobileOrEmail, fileList);
+      // Convert File[] to FileList for API
+      const dt = new DataTransfer();
+      files.forEach(file => dt.items.add(file));
+      const convertedFileList = dt.files;
+      
+      const response = await uploadReport(mobileOrEmail, convertedFileList);
       console.log('Upload response:', response);
       setResult(response);
     } catch (err: any) {
@@ -77,7 +80,7 @@ const UploadReportPage: React.FC = () => {
                 <input
                   type="file"
                   multiple
-                  accept=".pdf,.jpg,.jpeg,.png"
+                  accept=".pdf,image/*"
                   onChange={(e) => {
                     if (e.target.files) {
                       setFiles(prev => [...prev, ...Array.from(e.target.files!)]);

@@ -39,12 +39,16 @@ const UploadFoodPage: React.FC = () => {
     setError('');
     
     try {
-      const fileList = files as any;
-      fileList.length = files.length;
+      // Convert File[] to FileList for API
+      const dt = new DataTransfer();
+      files.forEach(file => dt.items.add(file));
+      const fileList = dt.files;
+      
       const response = await uploadFood(mobileOrEmail, mealTime, fileList);
       setResult(response);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Upload failed');
+      console.error('Upload error:', err);
+      setError(err.response?.data?.detail || err.message || 'Upload failed');
     } finally {
       setLoading(false);
     }
@@ -66,30 +70,19 @@ const UploadFoodPage: React.FC = () => {
         {/* QR Code Section - Only show on desktop */}
         {!isMobile && (
           <div className="glass-effect rounded-xl p-6 mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <Smartphone className="h-5 w-5 text-nutrition-600" />
-                <h3 className="text-lg font-semibold text-gray-800">Mobile Upload</h3>
-              </div>
-              <button
-                onClick={() => setShowQR(!showQR)}
-                className="flex items-center space-x-2 text-nutrition-600 hover:text-nutrition-700"
-              >
-                <QrCode className="h-5 w-5" />
-                <span>{showQR ? 'Hide QR' : 'Show QR'}</span>
-              </button>
+            <div className="flex items-center space-x-2 mb-4">
+              <Smartphone className="h-5 w-5 text-nutrition-600" />
+              <h3 className="text-lg font-semibold text-gray-800">Mobile Upload</h3>
             </div>
             
-            {showQR && (
-              <div className="text-center">
-                <div className="bg-white p-4 rounded-lg inline-block shadow-sm">
-                  <QRCode value={currentUrl} size={200} />
-                </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  Scan with your mobile device to upload food images directly
-                </p>
+            <div className="text-center">
+              <div className="bg-white p-4 rounded-lg inline-block shadow-sm">
+                <QRCode value={currentUrl} size={200} />
               </div>
-            )}
+              <p className="text-sm text-gray-600 mt-2">
+                Scan with your mobile device to upload food images directly
+              </p>
+            </div>
           </div>
         )}
 
@@ -132,25 +125,48 @@ const UploadFoodPage: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Food Images
               </label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-nutrition-400 transition-colors">
-                <Camera className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <input
-                  type="file"
-                  multiple
-                  accept=".jpg,.jpeg,.png"
-                  onChange={(e) => {
-                    if (e.target.files) {
-                      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
-                    }
-                  }}
-                  className="hidden"
-                  id="food-upload"
-                />
-                <label htmlFor="food-upload" className="cursor-pointer">
-                  <span className="text-nutrition-600 font-medium">Click to upload</span>
-                  <span className="text-gray-500"> or drag and drop</span>
-                </label>
-                <p className="text-sm text-gray-500 mt-2">JPG, PNG up to 10MB each</p>
+              <div className="space-y-4">
+                {/* Camera Button - Priority */}
+                <div className="border-2 border-solid border-nutrition-500 rounded-lg p-4 text-center bg-nutrition-50">
+                  <Camera className="h-10 w-10 text-nutrition-600 mx-auto mb-2" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                      }
+                    }}
+                    className="hidden"
+                    id="camera-upload"
+                  />
+                  <label htmlFor="camera-upload" className="cursor-pointer">
+                    <span className="text-nutrition-600 font-semibold">📸 Take Photo</span>
+                  </label>
+                  <p className="text-xs text-nutrition-600 mt-1">Use camera to capture food</p>
+                </div>
+                
+                {/* Gallery Button - Secondary */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-nutrition-400 transition-colors">
+                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                      }
+                    }}
+                    className="hidden"
+                    id="gallery-upload"
+                  />
+                  <label htmlFor="gallery-upload" className="cursor-pointer">
+                    <span className="text-gray-600 font-medium">📁 Choose from Gallery</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">Select multiple images</p>
+                </div>
               </div>
               {files.length > 0 && (
                 <div className="mt-3 bg-blue-50 rounded-lg p-3">
