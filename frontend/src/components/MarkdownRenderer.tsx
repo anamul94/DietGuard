@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface MarkdownRendererProps {
   content: string;
@@ -10,58 +11,107 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
+          // Table components - simplified to work with CSS
           table: ({ children }) => (
-            <div className="overflow-x-auto mb-6">
-              <table className="w-full border-collapse border border-gray-300 rounded-lg overflow-hidden shadow-sm">
+            <div className="table-wrapper">
+              <table className="nutrition-table">
                 {children}
               </table>
             </div>
           ),
-          thead: ({ children }) => (
-            <thead className="bg-medical-100">{children}</thead>
-          ),
-          tbody: ({ children }) => (
-            <tbody>{children}</tbody>
-          ),
-          th: ({ children }) => (
-            <th className="bg-medical-100 text-medical-700 font-semibold p-3 border border-gray-300 text-left whitespace-nowrap">
-              {children}
-            </th>
-          ),
-          td: ({ children }) => (
-            <td className="p-3 border border-gray-300 bg-white align-top">
-              {children}
-            </td>
-          ),
-          tr: ({ children }) => (
-            <tr className="hover:bg-gray-50">{children}</tr>
-          ),
+          thead: ({ children }) => <thead>{children}</thead>,
+          tbody: ({ children }) => <tbody>{children}</tbody>,
+          th: ({ children }) => <th>{children}</th>,
+          td: ({ children }) => <td>{children}</td>,
+          tr: ({ children }) => <tr>{children}</tr>,
+          
+          // Headers with medical/nutrition icons
           h1: ({ children }) => (
-            <h1 className="text-3xl font-bold text-medical-700 mb-6 flex items-center gap-3">
+            <h1 className="medical-header">
               🏥 {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="text-xl font-semibold text-nutrition-700 mb-4 mt-6 flex items-center gap-2">
-              {children}
+            <h2 className="nutrition-header">
+              🥗 {children}
             </h2>
           ),
+          h3: ({ children }) => (
+            <h3 className="section-header">
+              📊 {children}
+            </h3>
+          ),
+          h4: ({ children }) => (
+            <h4 className="subsection-header">
+              {children}
+            </h4>
+          ),
+          
+          // Lists with proper spacing and styling
+          ul: ({ children }) => (
+            <ul className="nutrition-list">
+              {children}
+            </ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="nutrition-list ordered">
+              {children}
+            </ol>
+          ),
+          li: ({ children }) => (
+            <li className="nutrition-list-item">
+              {children}
+            </li>
+          ),
+          
+          // Blockquotes for warnings/notes
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-yellow-400 bg-yellow-50 p-4 my-4 rounded-r-lg shadow-sm">
-              <div className="flex items-start gap-2">
-                <span className="text-yellow-600 font-bold">⚠️</span>
-                <div>{children}</div>
+            <blockquote className="medical-alert">
+              <div className="alert-content">
+                <span className="alert-icon">⚠️</span>
+                <div className="alert-text">{children}</div>
               </div>
             </blockquote>
           ),
+          
+          // Inline elements
           strong: ({ children }) => (
-            <strong className="text-red-600 font-bold">{children}</strong>
+            <strong className="highlight-text">
+              {children}
+            </strong>
           ),
+          em: ({ children }) => (
+            <em className="emphasis-text">
+              {children}
+            </em>
+          ),
+          
+          // Code blocks
           code: ({ children }) => (
-            <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono text-gray-800">
+            <code className="inline-code">
               {children}
             </code>
+          ),
+          pre: ({ children }) => (
+            <pre className="code-block">
+              {children}
+            </pre>
+          ),
+          
+          // Links
+          a: ({ children, href }) => (
+            <a href={href} className="medical-link" target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          ),
+          
+          // Paragraphs with proper spacing
+          p: ({ children }) => (
+            <p className="nutrition-paragraph">
+              {children}
+            </p>
           ),
         }}
       >
