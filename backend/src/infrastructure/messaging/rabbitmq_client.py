@@ -3,12 +3,13 @@ import json
 import aio_pika
 from typing import Dict, Any
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 class RabbitMQClient:
-    def __init__(self, connection_url: str = "amqp://guest:guest@localhost:5672/"):
-        self.connection_url = connection_url
+    def __init__(self, connection_url: str = None):
+        self.connection_url = connection_url or os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
         self.connection = None
         self.channel = None
 

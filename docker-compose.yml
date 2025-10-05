@@ -37,6 +37,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=myredissecret
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     env_file:
       - ./backend/.env
     depends_on:
