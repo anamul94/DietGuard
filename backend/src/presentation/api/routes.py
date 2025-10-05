@@ -7,6 +7,7 @@ from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.utils.redis_utils import RedisClient
+from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 
 app = FastAPI()
 
@@ -95,7 +96,7 @@ async def upload_food(
         nutritionist_advice = await nutritionist_agent(food_analysis, medical_report, meal_time)
 
         result_data = {
-            "mobile_number": mobile_or_email,
+            "user_email": mobile_or_email,
             "meal_time": meal_time,
             "files_processed": len(files),
             "filenames": filenames,
@@ -105,6 +106,15 @@ async def upload_food(
 
         # Save to Redis with nutrition data type
         redis_client.save_nutrition_data(mobile_or_email, result_data)
+
+        # Publish event to RabbitMQ (non-blocking)
+        event_data = {
+            "user_email": mobile_or_email,
+            "meal_time": meal_time,
+            "food_analysis": food_analysis,
+            "nutritionist_recommendations": nutritionist_advice
+        }
+        asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
 
         return result_data
 

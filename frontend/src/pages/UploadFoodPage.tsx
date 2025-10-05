@@ -233,7 +233,7 @@ const UploadFoodPage: React.FC = () => {
               <p className="text-green-800">
                 <strong>Meal:</strong> {result.meal_time} | 
                 <strong> Images:</strong> {result.files_processed} | 
-                <strong> Patient:</strong> {result.mobile_number}
+                <strong> Patient:</strong> {result.user_email}
               </p>
             </div>
 
