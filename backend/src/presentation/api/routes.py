@@ -8,30 +8,25 @@ from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.utils.redis_utils import RedisClient
-from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
-from ...infrastructure.websocket.socket_manager import socket_manager
+# from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 
+# Create FastAPI app first
 app = FastAPI()
 
-# Add CORS middleware first
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3003", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3003",
-        "http://15.207.68.194:3003",
-        "*"  # Allow all origins for development
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Import Socket.IO server
-from ...infrastructure.websocket.socket_manager import sio
-
+# Create Socket.IO server
+sio = socketio.AsyncServer(
+    cors_allowed_origins="*",
+    async_mode='asgi'
+)
 
 @app.get("/")
 async def read_root():
@@ -49,9 +44,8 @@ async def get_report(user_id: str):
     
     return data
 
-# Wrap FastAPI app with Socket.IO
-socket_app = socketio.ASGIApp(sio, app)
-
+# Create Socket.IO ASGI app
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 
@@ -114,15 +108,15 @@ async def upload_food(
         # Save to Redis with nutrition data type
         redis_client.save_nutrition_data(mobile_or_email, result_data)
 
-        # Publish event to RabbitMQ and emit via WebSocket (non-blocking)
+        # Emit via WebSocket (non-blocking)
         event_data = {
             "user_email": mobile_or_email,
             "meal_time": meal_time,
             "food_analysis": food_analysis,
             "nutritionist_recommendations": nutritionist_advice
         }
-        asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
-        asyncio.create_task(socket_manager.emit_food_event(event_data))
+        asyncio.create_task(sio.emit('food_analysis_complete', event_data))
+        # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
 
         return result_data
 
