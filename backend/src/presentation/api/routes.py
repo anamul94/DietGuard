@@ -11,11 +11,13 @@ from ...infrastructure.utils.redis_utils import RedisClient
 from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 from ...infrastructure.websocket.socket_manager import socket_manager
 
+# Import Socket.IO server first
+from ...infrastructure.websocket.socket_manager import sio
+
 app = FastAPI()
 
-# Import Socket.IO server
-from ...infrastructure.websocket.socket_manager import sio
-socket_app = socketio.ASGIApp(sio, app)
+# Mount Socket.IO
+app.mount("/socket.io", socketio.ASGIApp(sio))
 
 # Add CORS middleware
 app.add_middleware(
