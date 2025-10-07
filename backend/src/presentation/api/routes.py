@@ -11,13 +11,10 @@ from ...infrastructure.utils.redis_utils import RedisClient
 from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 from ...infrastructure.websocket.socket_manager import socket_manager
 
-# Import Socket.IO server first
-from ...infrastructure.websocket.socket_manager import sio
-
 app = FastAPI()
 
-# Mount Socket.IO
-app.mount("/socket.io", socketio.ASGIApp(sio))
+# Import Socket.IO server
+from ...infrastructure.websocket.socket_manager import sio
 
 # Add CORS middleware
 app.add_middleware(
@@ -52,6 +49,8 @@ async def get_report(user_id: str):
     
     return data
 
+# Wrap FastAPI app with Socket.IO
+socket_app = socketio.ASGIApp(sio, app)
 
 
 
@@ -122,7 +121,7 @@ async def upload_food(
             "food_analysis": food_analysis,
             "nutritionist_recommendations": nutritionist_advice
         }
-        # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
+        asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
         asyncio.create_task(socket_manager.emit_food_event(event_data))
 
         return result_data
