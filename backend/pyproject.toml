@@ -17,4 +17,5 @@ dependencies = [
     "uvicorn>=0.36.0",
     "aio-pika>=9.4.0",
     "httpx>=0.25.2",
+    "python-socketio>=5.10.0",
 ]

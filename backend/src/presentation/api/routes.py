@@ -2,14 +2,20 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
+import socketio
 from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
 from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.utils.redis_utils import RedisClient
 from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
+from ...infrastructure.websocket.socket_manager import socket_manager
 
 app = FastAPI()
+
+# Import Socket.IO server
+from ...infrastructure.websocket.socket_manager import sio
+socket_app = socketio.ASGIApp(sio, app)
 
 # Add CORS middleware
 app.add_middleware(
@@ -107,14 +113,15 @@ async def upload_food(
         # Save to Redis with nutrition data type
         redis_client.save_nutrition_data(mobile_or_email, result_data)
 
-        # Publish event to RabbitMQ (non-blocking)
+        # Publish event to RabbitMQ and emit via WebSocket (non-blocking)
         event_data = {
             "user_email": mobile_or_email,
             "meal_time": meal_time,
             "food_analysis": food_analysis,
             "nutritionist_recommendations": nutritionist_advice
         }
-        asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
+        # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
+        asyncio.create_task(socket_manager.emit_food_event(event_data))
 
         return result_data
 
