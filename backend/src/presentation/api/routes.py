@@ -13,10 +13,7 @@ from ...infrastructure.websocket.socket_manager import socket_manager
 
 app = FastAPI()
 
-# Import Socket.IO server
-from ...infrastructure.websocket.socket_manager import sio
-
-# Add CORS middleware
+# Add CORS middleware first
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -31,6 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Import Socket.IO server
+from ...infrastructure.websocket.socket_manager import sio
 
 
 @app.get("/")
