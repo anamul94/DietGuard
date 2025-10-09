@@ -27,7 +27,8 @@ async def summary_agent(nutrition_report: str) -> str:
 
     try:
         llm = init_chat_model(
-            "anthropic.claude-3-haiku-20240307-v1:0",
+            # "anthropic.claude-3-haiku-20240307-v1:0",
+            "openai.gpt-oss-20b-1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
         )

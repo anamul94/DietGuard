@@ -212,8 +212,8 @@
             addEvent("Disconnected from server", "system");
         });
 
-        socket.on("food_analysis_complete", (data) => {
-            addEvent("Food Analysis Complete", "food", data);
+        socket.on("food_analysis_complete", (summaryText) => {
+            addEvent("Nutritional Summary", "summary", summaryText);
         });
 
         function updateStatus(isConnected) {
@@ -226,40 +226,23 @@
             eventEl.className = "event";
 
             const timestamp = new Date().toLocaleString();
-            const email = data?.user_email ?? "Unknown user";
-            const meal = data?.meal_time ?? "Unknown time";
-            const analysisMarkdown = (data?.food_analysis || "").trim();
-            const recommendationsMarkdown = (data?.nutritionist_recommendations || "").trim();
 
             const headerFragment = document.createElement("div");
             headerFragment.innerHTML = `
                 <h2 class="event-title">${title}</h2>
                 <div class="event-meta">
                     <span>${timestamp}</span>
-                    <span>${email}</span>
-                    <span>${meal}</span>
                 </div>
             `;
 
             eventEl.appendChild(headerFragment);
 
-            let hasContent = false;
-
-            if (analysisMarkdown) {
-                eventEl.appendChild(createMarkdownSection("Food Analysis", analysisMarkdown));
-                hasContent = true;
-            }
-
-            if (recommendationsMarkdown) {
-                eventEl.appendChild(createMarkdownSection("Nutritionist Recommendations", recommendationsMarkdown));
-                hasContent = true;
-            }
-
-            if (!hasContent && data) {
-                const fallbackEl = document.createElement("p");
-                fallbackEl.className = "fallback";
-                fallbackEl.textContent = "No analysis details provided in the event payload.";
-                eventEl.appendChild(fallbackEl);
+            if (type === "summary" && data) {
+                eventEl.appendChild(createMarkdownSection("", data));
+            } else if (type === "system") {
+                const systemEl = document.createElement("p");
+                systemEl.textContent = data || title;
+                eventEl.appendChild(systemEl);
             }
 
             eventsEl.prepend(eventEl);

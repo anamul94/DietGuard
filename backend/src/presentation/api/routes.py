@@ -111,15 +111,11 @@ async def upload_food(
         # Save to Redis with nutrition data type
         redis_client.save_nutrition_data(mobile_or_email, result_data)
 
-        # Emit via WebSocket (non-blocking)
-        event_data = {
-            "meal_time": meal_time,
-            "food_analysis": food_analysis,
-            "nutritionist_recommendations": nutritionist_advice
-        }
+        # Get formatted summary for speech
         formated_summary_for_speech = await summary_agent(nutritionist_advice)
         print(formated_summary_for_speech)
         
+        # Emit via WebSocket (non-blocking) - send only summary text
         asyncio.create_task(sio.emit('food_analysis_complete', formated_summary_for_speech))
         # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
 
