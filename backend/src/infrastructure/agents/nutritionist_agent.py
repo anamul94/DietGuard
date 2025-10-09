@@ -39,6 +39,8 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
             "Keep responses brief and tabular.\n\n"
             "Format:\n\n"
             "# NUTRITIONAL CONSULTATION REPORT\n\n"
+            "## 🥗 CONSUMED FOOD ITEMS\n"
+            "List specific food items identified.\n\n"
             "## 🔍 DIETARY ASSESSMENT\n"
             "| Parameter | Finding | Significance |\n"
             "| --- | --- | --- |\n\n"
