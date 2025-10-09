@@ -7,8 +7,11 @@ from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_p
 from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
+from ...infrastructure.agents.summary_agent import summary_agent
 from ...infrastructure.utils.redis_utils import RedisClient
 # from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
+
+import json
 
 # Create FastAPI app first
 app = FastAPI()
@@ -110,12 +113,14 @@ async def upload_food(
 
         # Emit via WebSocket (non-blocking)
         event_data = {
-            "user_email": mobile_or_email,
             "meal_time": meal_time,
             "food_analysis": food_analysis,
             "nutritionist_recommendations": nutritionist_advice
         }
-        asyncio.create_task(sio.emit('food_analysis_complete', event_data))
+        formated_summary_for_speech = await summary_agent(nutritionist_advice)
+        print(formated_summary_for_speech)
+        
+        asyncio.create_task(sio.emit('food_analysis_complete', formated_summary_for_speech))
         # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
 
         return result_data
