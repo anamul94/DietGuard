@@ -3,9 +3,10 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+from .agent_response import AgentResponse
 
 
-async def food_agent(data, type: str, mime_type) -> str:
+async def food_agent(data, type: str, mime_type) -> AgentResponse:
     """
     data: base64-encoded string OR list of base64 strings for multiple images
     type: "image" OR list of "image" for multiple images
@@ -20,42 +21,44 @@ async def food_agent(data, type: str, mime_type) -> str:
     aws_region = os.getenv("AWS_REGION")
 
     if not all([aws_key, aws_secret, aws_region]):
-        return f"Environment variables not loaded. AWS_ACCESS_KEY_ID: {'✓' if aws_key else '✗'}, AWS_SECRET_ACCESS_KEY: {'✓' if aws_secret else '✗'}, AWS_REGION: {'✓' if aws_region else '✗'}"
+        return AgentResponse.error_response("Configuration error. Please try again later.")
 
     try:
         llm = init_chat_model(
-            "anthropic.claude-3-haiku-20240307-v1:0",
+            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
+            temperature=0.1,
         )
     except Exception as e:
-        return f"Model initialization failed: {str(e)}"
+        return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
     system_message = {
-        "role": "system",
-        "content": (
-            "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
-            "Analyze food items professionally and provide detailed nutritional assessment. "
-            "IMPORTANT: Focus ONLY on food items. Ignore any people, faces, or non-food elements in images. "
-            "Never mention that you're analyzing images or using AI technology. "
-            "Respond as if conducting a professional food consultation. \n\n"
-            "Format your response using markdown with tables:\n\n"
-            "## FOOD IDENTIFICATION\n"
-            "| Food Item | Quantity | Preparation Method |\n"
-            "| --- | --- | --- |\n\n"
-            "## NUTRITIONAL BREAKDOWN\n"
-            "| Nutrient | Amount | % Daily Value |\n"
-            "| --- | --- | --- |\n"
-            "| Calories | | |\n"
-            "| Protein | | |\n"
-            "| Carbohydrates | | |\n"
-            "| Fat | | |\n"
-            "| Fiber | | |\n"
-            "| Sugar | | |\n\n"
-            "## SUMMARY\n"
-            "Provide professional assessment and recommendations."
-        ),
-    }
+    "role": "system",
+    "content": (
+        "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
+        "Your task is to professionally identify and analyze food items in images. "
+        "Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements. "
+        "Your analysis must be precise, identifying each food item and estimating its quantity "
+        "(e.g., '2 boiled eggs', '1 cup of rice', 'half an apple'). "
+        "Be objective and concise — do not speculate or include unnecessary commentary. "
+        "Do not mention images, detection, or AI-related processes.\n\n"
+        "Format your response using **markdown tables** exactly as follows:\n\n"
+        "## FOOD IDENTIFICATION\n"
+        "| Food Item | Quantity | Preparation Method |\n"
+        "| --- | --- | --- |\n\n"
+        "## NUTRITIONAL BREAKDOWN\n"
+        "| Nutrient | Amount | % Daily Value |\n"
+        "| --- | --- | --- |\n"
+        "| Calories | | |\n"
+        "| Protein | | |\n"
+        "| Carbohydrates | | |\n"
+        "| Fat | | |\n"
+        "| Fiber | | |\n"
+        "| Sugar | | |\n\n"
+        "Provide only the tables. Do not include summaries, recommendations, or extra commentary."
+    ),
+}
 
     # Handle multiple images
     if isinstance(data, list):
@@ -92,6 +95,7 @@ async def food_agent(data, type: str, mime_type) -> str:
         # Flush events to Langfuse
         flush_langfuse()
         
-        return response.text() if hasattr(response, "text") else str(response)
+        return AgentResponse.success_response(response.text() if hasattr(response, "text") else str(response))
     except Exception as e:
-        return f"Model invocation failed: {str(e)}"
+        print(f"Model invocation failed: {str(e)}")
+        return AgentResponse.error_response("Unable to analyze food items at this time. Please try again later.") 

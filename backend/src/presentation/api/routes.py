@@ -89,7 +89,13 @@ async def upload_food(
         type_list = ["image"] * len(encoded_images)
         mime_list = [img["mime_type"] for img in encoded_images]
         
-        food_analysis = await food_agent(data_list, type_list, mime_list)
+        food_analysis_response = await food_agent(data_list, type_list, mime_list)
+        
+        # Check if food analysis failed
+        if not food_analysis_response.success:
+            raise HTTPException(status_code=500, detail=food_analysis_response.error_message)
+        
+        food_analysis = food_analysis_response.data
 
         # Get medical report data
         redis_client = RedisClient()
