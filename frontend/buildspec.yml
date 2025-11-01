@@ -1,0 +1,37 @@
+version: 0.2
+
+env:
+  parameter-store:
+    REACT_APP_API_URL: "REACT_APP_API_URL"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - echo Installing dependencies...
+      - npm ci
+  
+  pre_build:
+    commands:
+      - echo Pre-build phase started on `date`
+     
+  
+  build:
+    commands:
+      - echo Build started on `date`
+      - npm run build
+  
+  post_build:
+    commands:
+      - echo Build completed on `date`
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: build
+  name: dietguard-frontend-$(date +%Y-%m-%d)
+
+cache:
+  paths:
+    - node_modules/**/*
