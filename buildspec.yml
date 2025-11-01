@@ -1,0 +1,19 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Build started on `date`
+      - echo Installing dependencies...
+  build:
+    commands:
+      - echo Build phase started
+      - echo No build steps required for Python application
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Preparing artifacts...
+artifacts:
+  files:
+    - '**/*'
+  name: dietguard-backend-$(date +%Y-%m-%d)

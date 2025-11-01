@@ -8,7 +8,7 @@ from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent
-from ...infrastructure.utils.redis_utils import RedisClient
+from ...infrastructure.database.postgres_client import PostgresClient
 # from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 
 import json
@@ -35,12 +35,20 @@ sio = socketio.AsyncServer(
 async def read_root():
     return {"message": "Hello from prodmeasure!"}
 
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "dietguard-backend",
+        "version": "1.0.0"
+    }
+
 
 @app.get("/get_report/{user_id}")
 async def get_report(user_id: str):
     """Get saved report data for user"""
-    redis_client = RedisClient()
-    data = redis_client.get_report_data(user_id)
+    postgres_client = PostgresClient()
+    data = await postgres_client.get_report_data(user_id)
     
     if not data:
         raise HTTPException(status_code=404, detail="No report data found or data expired")
@@ -98,8 +106,8 @@ async def upload_food(
         food_analysis = food_analysis_response.data
 
         # Get medical report data
-        redis_client = RedisClient()
-        medical_data = redis_client.get_report_data(mobile_or_email)
+        postgres_client = PostgresClient()
+        medical_data = await postgres_client.get_report_data(mobile_or_email)
         medical_report = medical_data.get('data', {}).get('combined_response', 'No medical report available') if medical_data else 'No medical report available'
 
         # Get nutritionist recommendations
@@ -114,8 +122,8 @@ async def upload_food(
             "nutritionist_recommendations": nutritionist_advice,
         }
 
-        # Save to Redis with nutrition data type
-        redis_client.save_nutrition_data(mobile_or_email, result_data)
+        # Save to PostgreSQL with nutrition data type
+        await postgres_client.save_nutrition_data(mobile_or_email, result_data)
 
         # Get formatted summary for speech
         formated_summary_for_speech = await summary_agent(nutritionist_advice)
@@ -134,8 +142,8 @@ async def upload_food(
 @app.delete("/delete_report/{user_id}")
 async def delete_report(user_id: str):
     """Delete saved report data for user"""
-    redis_client = RedisClient()
-    success = redis_client.delete_report_data(user_id)
+    postgres_client = PostgresClient()
+    success = await postgres_client.delete_report_data(user_id)
     
     if not success:
         raise HTTPException(status_code=404, detail="No report data found to delete")
@@ -146,26 +154,20 @@ async def delete_report(user_id: str):
 @app.get("/debug/redis/{user_id}")
 async def debug_redis(user_id: str):
     """Debug Redis connection and data"""
-    redis_client = RedisClient()
+    postgres_client = PostgresClient()
     try:
-        # Test connection
-        redis_client.redis_client.ping()
-        
-        # Check if key exists
-        key = f"dietguard:report:{user_id}"
-        exists = redis_client.redis_client.exists(key)
-        ttl = redis_client.redis_client.ttl(key)
+        # Test connection by getting data
+        data = await postgres_client.get_report_data(user_id)
         
         return {
-            "redis_connected": True,
-            "key": key,
-            "key_exists": bool(exists),
-            "ttl_seconds": ttl,
-            "raw_data": redis_client.redis_client.get(key) if exists else None
+            "postgres_connected": True,
+            "user_id": user_id,
+            "data_exists": data is not None,
+            "raw_data": data
         }
     except Exception as e:
         return {
-            "redis_connected": False,
+            "postgres_connected": False,
             "error": str(e)
         }
 
@@ -222,9 +224,9 @@ async def upload_report(
             "combined_response": combined_response
         }
 
-        # Save to Redis with 12 hours expiration
-        redis_client = RedisClient()
-        redis_client.save_report_data(mobile_or_email, result_data)
+        # Save to PostgreSQL with 12 hours expiration
+        postgres_client = PostgresClient()
+        await postgres_client.save_report_data(mobile_or_email, result_data, expiration_hours=12)
 
         return result_data
 
@@ -235,8 +237,8 @@ async def upload_report(
 @app.get("/get_nutrition/{user_id}")
 async def get_nutrition(user_id: str):
     """Get saved nutrition data for user"""
-    redis_client = RedisClient()
-    data = redis_client.get_nutrition_data(user_id)
+    postgres_client = PostgresClient()
+    data = await postgres_client.get_nutrition_data(user_id)
 
     if not data:
         raise HTTPException(
