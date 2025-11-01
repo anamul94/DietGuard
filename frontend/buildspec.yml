@@ -30,9 +30,9 @@ phases:
 artifacts:
   files:
     - '**/*'
-  base-directory: build
+  base-directory: frontend/build
   name: dietguard-frontend-$(date +%Y-%m-%d)
 
 cache:
   paths:
-    - node_modules/**/*
+    - frontend/node_modules/**/*
