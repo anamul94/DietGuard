@@ -29,8 +29,10 @@ phases:
 
 artifacts:
   files:
-    - '**/*'
-  base-directory: frontend/build
+    - appspec.yml
+    - scripts/**/*
+    - build/**/*
+  base-directory: frontend
   name: dietguard-frontend-$(date +%Y-%m-%d)
 
 cache:
