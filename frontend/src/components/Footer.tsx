@@ -23,7 +23,7 @@ const Footer: React.FC = () => {
           </div>
         </div>
         <div className="mt-8 pt-6 border-t text-center">
-          <p className="text-gray-600">&copy; 2024 DietGuard AI. AI-Powered Nutritional Analysis.</p>
+          <p className="text-gray-600">&copy; {new Date().getFullYear()} DietGuard AI. AI-Powered Nutritional Analysis.</p>
         </div>
       </div>
     </footer>
