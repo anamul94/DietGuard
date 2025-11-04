@@ -33,7 +33,9 @@ artifacts:
     - scripts/**/*
     - build/**/*
   base-directory: frontend
-  name: dietguard-frontend-$(date +%Y-%m-%d)
+  name: frontend.zip
+  discard-paths: yes
+
 
 cache:
   paths:
