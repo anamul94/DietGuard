@@ -1,41 +1,32 @@
 version: 0.2
 
-env:
-  parameter-store:
-    REACT_APP_API_URL: "REACT_APP_API_URL"
-
 phases:
   install:
     runtime-versions:
       nodejs: 20
     commands:
-      - echo Installing dependencies...
+      - echo "Installing dependencies..."
       - cd frontend
       - npm ci
-  
-  pre_build:
-    commands:
-      - echo Pre-build phase started on `date`
-     
-  
+
   build:
     commands:
-      - echo Build started on `date`
+      - echo "Building React app..."
       - npm run build
-  
+
   post_build:
     commands:
-      - echo Build completed on `date`
+      - echo "Build complete at $(date)"
+      # Go back to repo root to ensure appspec.yml and scripts are copied
+      - cd ..
 
 artifacts:
   files:
     - appspec.yml
     - scripts/**/*
-    - build/**/*
-  base-directory: frontend
+    - frontend/build/**/*
   name: frontend.zip
-  discard-paths: yes
-
+  discard-paths: no
 
 cache:
   paths:
