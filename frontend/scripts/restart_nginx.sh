@@ -1,7 +1,12 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "Restarting Nginx..."
-systemctl restart nginx
-systemctl status nginx --no-pager
+# Prefer reload, fallback to restart
+if ! systemctl reload nginx; then
+  systemctl restart nginx
+fi
+# Verify service is active
+systemctl is-active --quiet nginx
+
 echo "Nginx restarted successfully."

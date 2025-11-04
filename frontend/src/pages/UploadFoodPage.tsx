@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Upload, Loader, CheckCircle, AlertCircle, QrCode, Smartphone, X } from 'lucide-react';
+import { Camera, Upload, Loader, CheckCircle, AlertCircle, Smartphone, X } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { uploadFood } from '../utils/api';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -12,7 +12,6 @@ const UploadFoodPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
-  const [showQR, setShowQR] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {

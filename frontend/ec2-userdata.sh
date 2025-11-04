@@ -121,11 +121,17 @@ EOL
 # Start CloudWatch agent
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
 
-# Install code deploy agent
-sudo yum install ruby -y
-sudo yum install wget -y
+# Install CodeDeploy agent (region-aware)
+sudo yum install -y ruby wget
 cd /home/ec2-user
-wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install
+
+# Detect instance region
+TOKEN=$(curl -sS -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+REGION=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F '"' '{print $4}')
+
+AGENT_URL="https://aws-codedeploy-$REGION.s3.$REGION.amazonaws.com/latest/install"
+wget -q "$AGENT_URL" -O install
 chmod +x ./install
-sudo ./install auto
+sudo ./install auto || sudo ./install auto
+sudo systemctl enable codedeploy-agent
 sudo systemctl start codedeploy-agent

@@ -3,22 +3,21 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 22
+      nodejs: 18
     commands:
       - echo "Installing dependencies..."
-      - cd "$CODEBUILD_SRC_DIR/frontend"
-      - npm ci
+      - cd frontend && npm ci
 
   build:
     commands:
       - echo "Building React app..."
-      - npm run build
+      - cd frontend && CI=false npm run build
+      - chmod +x scripts/*.sh || true
 
   post_build:
     commands:
-      - echo "Setting executable bits on hook scripts..."
-      - chmod +x scripts/*.sh || true
       - echo "Build complete at $(date)"
+      
 
 artifacts:
   base-directory: frontend
