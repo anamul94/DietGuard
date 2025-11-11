@@ -1,5 +1,10 @@
 version: 0.2
 
+env:
+  parameter-store:
+    REACT_APP_API_URL: "/foodapp-/ui/REACT_APP_API_URL"
+    REACT_APP_DOMAIN: "/foodapp-/ui/REACT_APP_DOMAIN"
+
 phases:
   install:
     runtime-versions:
@@ -12,6 +17,8 @@ phases:
   build:
     commands:
       - echo "Building React app..."
+      - echo "REACT_APP_API_URL=$REACT_APP_API_URL"
+      - echo "REACT_APP_DOMAIN=$REACT_APP_DOMAIN"
       - npm run build
 
   post_build:
