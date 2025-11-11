@@ -76,3 +76,9 @@ class PostgresClient:
             result = await session.execute(delete(ReportData).where(ReportData.user_id == user_id))
             await session.commit()
             return result.rowcount > 0
+    
+    async def health_check(self):
+        """Check database connectivity"""
+        async with AsyncSessionLocal() as session:
+            await session.execute(select(1))
+            return True

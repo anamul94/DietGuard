@@ -39,11 +39,28 @@ async def read_root():
 @app.get("/health")
 async def health_check():
     logger.info("Health check requested")
-    return {
+    
+    health_status = {
         "status": "healthy",
         "service": "dietguard-backend",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "checks": {
+            "database": "unknown"
+        }
     }
+    
+    # Check database connectivity
+    try:
+        postgres_client = PostgresClient()
+        await postgres_client.health_check()
+        health_status["checks"]["database"] = "healthy"
+        logger.info("Database health check passed")
+    except Exception as e:
+        health_status["checks"]["database"] = "unhealthy"
+        health_status["status"] = "degraded"
+        logger.error("Database health check failed", error=str(e))
+    
+    return health_status
 
 
 @app.get("/get_report/{user_id}")

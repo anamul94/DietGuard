@@ -25,7 +25,7 @@ uv sync
 pkill -f "uvicorn main:app" || true
 
 # Start the application in background
-nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > /var/log/dietguard.log 2>&1 &
+nohup uv run uvicorn main:app --host 0.0.0.0 --port 8080 > /var/log/dietguard.log 2>&1 &
 
 # Save PID for later use
 echo $! > /var/run/dietguard.pid
