@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { logger } from '../utils/logger';
 
 const HealthPage: React.FC = () => {
   const [healthStatus, setHealthStatus] = useState<any>(null);
@@ -9,9 +10,12 @@ const HealthPage: React.FC = () => {
   useEffect(() => {
     const checkHealth = async () => {
       try {
+        logger.info('Fetching health status from backend');
         const response = await axios.get(`${process.env.REACT_APP_API_URL}/health`);
+        logger.info('Health status received', response.data);
         setHealthStatus(response.data);
       } catch (err) {
+        logger.error('Failed to fetch health status', err);
         setError('Failed to fetch health status');
       } finally {
         setLoading(false);

@@ -3,6 +3,7 @@ import { FileText, Upload, Loader, CheckCircle, AlertCircle, X } from 'lucide-re
 import { uploadReport } from '../utils/api';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import BackButton from '../components/BackButton';
+import { logger } from '../utils/logger';
 
 const UploadReportPage: React.FC = () => {
   const [mobileOrEmail, setMobileOrEmail] = useState('');
@@ -23,17 +24,17 @@ const UploadReportPage: React.FC = () => {
     setResult(null);
     
     try {
-      console.log('Uploading files:', files.length, 'for user:', mobileOrEmail);
+      logger.info('Uploading files', { fileCount: files.length, user: mobileOrEmail });
       // Convert File[] to FileList for API
       const dt = new DataTransfer();
       files.forEach(file => dt.items.add(file));
       const convertedFileList = dt.files;
       
       const response = await uploadReport(mobileOrEmail, convertedFileList);
-      console.log('Upload response:', response);
+      logger.info('Upload successful', response);
       setResult(response);
     } catch (err: any) {
-      console.error('Upload error:', err);
+      logger.error('Upload failed', err);
       const errorMessage = err.response?.data?.detail || err.message || 'Upload failed';
       setError(errorMessage);
     } finally {

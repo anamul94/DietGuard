@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logger } from './logger';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://15.207.68.194:8010';
 
@@ -29,17 +30,17 @@ export const uploadReport = async (
   mobileOrEmail: string,
   files: FileList
 ): Promise<UploadReportResponse> => {
-  console.log('API: Preparing upload for', mobileOrEmail, 'with', files.length, 'files');
+  logger.info('Preparing report upload', { user: mobileOrEmail, fileCount: files.length });
   
   const formData = new FormData();
   formData.append('mobile_or_email', mobileOrEmail);
   
   for (let i = 0; i < files.length; i++) {
-    console.log('API: Adding file', files[i].name, 'size:', files[i].size);
+    logger.debug('Adding file to upload', { filename: files[i].name, size: files[i].size });
     formData.append('files', files[i]);
   }
 
-  console.log('API: Making request to', `${API_BASE_URL}/upload_report/`);
+  logger.info('Making API request', { endpoint: `${API_BASE_URL}/upload_report/` });
   
   try {
     const response = await api.post('/upload_report/', formData, {
@@ -49,10 +50,10 @@ export const uploadReport = async (
       timeout: 60000, // 60 second timeout
     });
     
-    console.log('API: Success response:', response.status, response.data);
+    logger.info('Upload successful', { status: response.status, filesProcessed: response.data.files_processed });
     return response.data;
   } catch (error: any) {
-    console.error('API: Upload failed:', error.response?.status, error.response?.data, error.message);
+    logger.error('Upload failed', { status: error.response?.status, data: error.response?.data, message: error.message });
     throw error;
   }
 };
