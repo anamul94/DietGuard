@@ -5,7 +5,7 @@ echo "Stopping temporary health service..."
 sudo systemctl stop temp-health || true
 sudo systemctl disable temp-health || true
 sudo rm -f /etc/systemd/system/temp-health.service
-sudo systemctl daemon-reloadtl disable temp-health
+sudo systemctl daemon-reload
 
 # Create application service
 sudo tee /etc/systemd/system/dietguard-backend.service > /dev/null <<EOF

@@ -12,7 +12,7 @@ fi
 
 # Check health endpoint
 for i in {1..10}; do
-    if curl -f http://localhost:8000/health; then
+    if curl -f http://localhost:8080/health; then
         echo "Health check passed"
         exit 0
     fi
