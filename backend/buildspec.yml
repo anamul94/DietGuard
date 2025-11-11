@@ -1,5 +1,25 @@
 version: 0.2
 
+env:
+  parameter-store:
+    AWS_ACCESS_KEY_ID: "/foodapp/backend/AWS_ACCESS_KEY_ID"
+    AWS_SECRET_ACCESS_KEY: "/foodapp/backend/AWS_SECRET_ACCESS_KEY"
+    AWS_REGION: "/foodapp/backend/AWS_REGION"
+    INFERENCE_PROFILE_ARN: "/foodapp/backend/INFERENCE_PROFILE_ARN"
+    INFERENCE_PROFILE_ID: "/foodapp/backend/INFERENCE_PROFILE_ID"
+    POSTGRES_HOST: "/foodapp/backend/POSTGRES_HOST"
+    POSTGRES_PORT : "/foodapp/backend/POSTGRES_PORT"
+    POSTGRES_USER: "/foodapp/backend/POSTGRES_USER"
+    POSTGRES_PASSWORD: "/foodapp/backend/POSTGRES_PASSWORD"
+    POSTGRES_DB: "/foodapp/backend/POSTGRES_DB"
+    CLAUDE_3_7_PROFILE_ARN: "/foodapp/backend/CLAUDE_3_7_PROFILE_ARN"
+    CLAUDE_3_7_PROFILE_ID: "/foodapp/backend/CLAUDE_3_7_PROFILE_ID"
+    CLAUDE_4_PROFILE_ARN: "/foodapp/backend/CLAUDE_4_PROFILE_ARN"
+    CLAUDE_4_PROFILE_ID: "/foodapp/backend/CLAUDE_4_PROFILE_ID"
+    NOVA_PRO_PROFILE_ARN: "/foodapp/backend/NOVA_PRO_PROFILE_ARN"
+    NOVA_PRO_INFERENCE_PROFILE_ID: "/foodapp/backend/NOVA_PRO_INFERENCE_PROFILE_ID"
+
+
 phases:
   pre_build:
     commands:

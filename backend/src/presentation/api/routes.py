@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
 import socketio
+from ...infrastructure.utils.logger import logger
 from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
 from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
@@ -37,6 +38,7 @@ async def read_root():
 
 @app.get("/health")
 async def health_check():
+    logger.info("Health check requested")
     return {
         "status": "healthy",
         "service": "dietguard-backend",
@@ -47,12 +49,15 @@ async def health_check():
 @app.get("/get_report/{user_id}")
 async def get_report(user_id: str):
     """Get saved report data for user"""
+    logger.info("Report data requested", user_id=user_id)
     postgres_client = PostgresClient()
     data = await postgres_client.get_report_data(user_id)
     
     if not data:
+        logger.warning("Report data not found", user_id=user_id)
         raise HTTPException(status_code=404, detail="No report data found or data expired")
     
+    logger.info("Report data retrieved successfully", user_id=user_id)
     return data
 
 # Create Socket.IO ASGI app
@@ -66,6 +71,7 @@ async def upload_food(
     meal_time: str = Form(..., description="Meal time: breakfast, lunch, dinner, snack"),
     files: List[UploadFile] = File(..., description="Food images"),
 ):
+    logger.info("Food upload started", user=mobile_or_email, meal_time=meal_time, file_count=len(files))
     allowed_extensions = {".jpg", ".jpeg", ".png"}
     allowed_meal_times = {"breakfast", "lunch", "dinner", "snack"}
     
@@ -127,27 +133,32 @@ async def upload_food(
 
         # Get formatted summary for speech
         formated_summary_for_speech = await summary_agent(nutritionist_advice)
-        print(formated_summary_for_speech)
+        logger.debug("Summary generated for speech", summary_length=len(formated_summary_for_speech))
         
         # Emit via WebSocket (non-blocking) - send only summary text
         asyncio.create_task(sio.emit('food_analysis_complete', formated_summary_for_speech))
         # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
 
+        logger.info("Food upload completed successfully", user=mobile_or_email, meal_time=meal_time, files_processed=len(files))
         return result_data
 
     except Exception as e:
+        logger.error("Food upload failed", user=mobile_or_email, meal_time=meal_time, error=str(e))
         raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
 
 
 @app.delete("/delete_report/{user_id}")
 async def delete_report(user_id: str):
     """Delete saved report data for user"""
+    logger.info("Report deletion requested", user_id=user_id)
     postgres_client = PostgresClient()
     success = await postgres_client.delete_report_data(user_id)
     
     if not success:
+        logger.warning("Report data not found for deletion", user_id=user_id)
         raise HTTPException(status_code=404, detail="No report data found to delete")
     
+    logger.info("Report data deleted successfully", user_id=user_id)
     return {"message": f"Report data deleted for user: {user_id}"}
 
 
@@ -177,6 +188,7 @@ async def upload_report(
     mobile_or_email: str = Form(..., description="User's mobile/email"),
     files: List[UploadFile] = File(..., description="Image or PDF files"),
 ):
+    logger.info("Report upload started", user=mobile_or_email, file_count=len(files))
     # Validate mobile number
     # if not mobile_number.strip() or len(mobile_number) < 10:
     #     raise HTTPException(status_code=400, detail="Valid mobile number is required")
@@ -227,10 +239,12 @@ async def upload_report(
         # Save to PostgreSQL with 12 hours expiration
         postgres_client = PostgresClient()
         await postgres_client.save_report_data(mobile_or_email, result_data, expiration_hours=12)
-
+        
+        logger.info("Report upload completed successfully", user=mobile_or_email, files_processed=len(files))
         return result_data
 
     except Exception as e:
+        logger.error("Report upload failed", user=mobile_or_email, error=str(e))
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
 
