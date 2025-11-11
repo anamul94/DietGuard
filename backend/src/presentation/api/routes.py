@@ -244,3 +244,89 @@ async def get_nutrition(user_id: str):
         )
 
     return data
+
+@app.get("/test_llm")
+async def test_llm_connection():
+    """Test LLM connection with simple query"""
+    try:
+        from ...infrastructure.agents.test_agent import test_agent
+        
+        response = await test_agent()
+        
+        return {
+            "status": "success",
+            "llm_connected": True,
+            "test_query": "How are you?",
+            "llm_response": response
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "llm_connected": False,
+            "error": str(e)
+        }
+
+@app.get("/test-llm")
+async def test_llm_ui():
+    """Serve test LLM UI page"""
+    from fastapi.responses import HTMLResponse
+    
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test LLM Connection</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 50px; }
+            button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+            #result { margin-top: 20px; padding: 15px; border: 1px solid #ccc; background: #f9f9f9; }
+            .loading { color: #666; }
+            .success { color: green; }
+            .error { color: red; }
+        </style>
+    </head>
+    <body>
+        <h1>LLM Connection Test</h1>
+        <button onclick="testLLM()">Test LLM Connection</button>
+        <div id="result"></div>
+
+        <script>
+            async function testLLM() {
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML = '<div class="loading">Testing LLM connection...</div>';
+                
+                try {
+                    const response = await fetch('/test_llm');
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        resultDiv.innerHTML = `
+                            <div class="success">
+                                <h3>✅ LLM Connection Successful</h3>
+                                <p><strong>Query:</strong> ${data.test_query}</p>
+                                <p><strong>Response:</strong> ${data.llm_response}</p>
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="error">
+                                <h3>❌ LLM Connection Failed</h3>
+                                <p><strong>Error:</strong> ${data.error}</p>
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h3>❌ Request Failed</h3>
+                            <p><strong>Error:</strong> ${error.message}</p>
+                        </div>
+                    `;
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    
+    return HTMLResponse(content=html_content)
