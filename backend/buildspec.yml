@@ -36,4 +36,5 @@ phases:
 artifacts:
   files:
     - '**/*'
+  base-directory: backend
   name: dietguard-backend-$(date +%Y-%m-%d)
