@@ -15,7 +15,10 @@ fi
 echo "Found pyproject.toml"
 
 # Add uv to PATH
-export PATH="$HOME/.cargo/bin:/home/ubuntu/.cargo/bin:/root/.cargo/bin:$PATH"
+export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.cargo/bin:/usr/local/bin:$PATH"
+
+UV_VERSION=$(uv --version)
+echo "Using uv version: $UV_VERSION"
 
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then
@@ -23,8 +26,7 @@ if ! command -v uv &> /dev/null; then
     exit 1
 fi
 
-UV_VERSION=$(uv --version)
-echo "Using uv version: $UV_VERSION"
+
 
 # Sync dependencies from uv.lock (respects lock file)
 echo "Syncing dependencies with uv..."
