@@ -21,11 +21,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "*",
-        "http://frontend-alb-389393517.ap-south-1.elb.amazonaws.com",
-        "https://frontend-alb-389393517.ap-south-1.elb.amazonaws.com",
-        "http://localhost:3000",
-        "https://localhost:3000"
+        "*"
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -283,3 +279,24 @@ async def get_nutrition(user_id: str):
         )
 
     return data
+
+@app.get("/test_llm")
+async def test_llm_connection():
+    """Test LLM connection with simple query"""
+    try:
+        from ...infrastructure.agents.test_agent import test_agent
+        
+        response = await test_agent()
+        
+        return {
+            "status": "success",
+            "llm_connected": True,
+            "test_query": "How are you?",
+            "llm_response": response
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "llm_connected": False,
+            "error": str(e)
+        }
