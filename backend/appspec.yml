@@ -21,16 +21,16 @@ hooks:
   BeforeInstall:
     - location: scripts/stop_application.sh
       timeout: 300
-      runas: root
+      runas: ubuntu
   AfterInstall:
     - location: scripts/install_dependencies.sh
       timeout: 600
-      runas: root
+      runas: ubuntu
   ApplicationStart:
     - location: scripts/start_application.sh
       timeout: 300
-      runas: root
+      runas: ubuntu
   ApplicationStop:
     - location: scripts/stop_application.sh
       timeout: 300
-      runas: root
+      runas: ubuntu
