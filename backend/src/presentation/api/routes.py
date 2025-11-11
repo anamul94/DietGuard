@@ -20,9 +20,15 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow any origin
-    allow_credentials=True,  # Must be True for credentials
-    allow_methods=["*"],
+    allow_origins=[
+        "*",
+        "http://frontend-alb-389393517.ap-south-1.elb.amazonaws.com",
+        "https://frontend-alb-389393517.ap-south-1.elb.amazonaws.com",
+        "http://localhost:3000",
+        "https://localhost:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
