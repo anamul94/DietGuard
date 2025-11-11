@@ -18,7 +18,12 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/opt/dietguard
 Environment=PORT=8080
-ExecStart=/bin/bash -c 'cd /opt/dietguard && python3 -m uvicorn main:app --host 0.0.0.0 --port 8080'
+# Ensure Python logs are unbuffered so they reach journald immediately
+Environment=PYTHONUNBUFFERED=1
+# Load environment variables from .env generated during AfterInstall
+EnvironmentFile=/opt/dietguard/.env
+# Run using the project virtualenv's uvicorn to ensure dependencies are available
+ExecStart=/opt/dietguard/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
 Restart=always
 RestartSec=10
 
@@ -45,5 +50,10 @@ for i in {1..10}; do
 done
 
 echo "Application failed to start, restarting temp service"
+# Print service status and recent logs to help diagnose
+echo "---- dietguard-backend status ----"
+sudo systemctl status dietguard-backend --no-pager || true
+echo "---- last 200 dietguard-backend logs ----"
+sudo journalctl -u dietguard-backend -n 200 --no-pager || true
 sudo systemctl start temp-health
 exit 1
