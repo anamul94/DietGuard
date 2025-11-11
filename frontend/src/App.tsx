@@ -7,6 +7,7 @@ import UploadReportPage from './pages/UploadReportPage';
 import UploadFoodPage from './pages/UploadFoodPage';
 import DeleteDataPage from './pages/DeleteDataPage';
 import MarkdownTestPage from './pages/MarkdownTestPage';
+import HealthDbPage from './pages/HealthDbPage';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             <Route path="/upload-food" element={<UploadFoodPage />} />
             <Route path="/delete-data" element={<DeleteDataPage />} />
             <Route path="/markdown-test" element={<MarkdownTestPage />} />
+            <Route path="/healthdb" element={<HealthDbPage />} />
           </Routes>
         </main>
         <Footer />
