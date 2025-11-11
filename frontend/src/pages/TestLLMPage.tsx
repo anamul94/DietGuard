@@ -8,14 +8,25 @@ const TestLLMPage: React.FC = () => {
     setLoading(true);
     setResult(null);
     
+    const apiUrl = `${process.env.REACT_APP_API_URL}/test_llm`;
+    console.log('Testing API URL:', apiUrl);
+    
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/test_llm`);
+      const response = await fetch(apiUrl);
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       setResult(data);
     } catch (error: any) {
+      console.error('API Error:', error);
       setResult({
         status: 'error',
-        error: error.message
+        error: error.message,
+        apiUrl: apiUrl
       });
     } finally {
       setLoading(false);
@@ -46,6 +57,7 @@ const TestLLMPage: React.FC = () => {
             <div className="text-red-600">
               <h3 className="text-xl font-bold">❌ LLM Connection Failed</h3>
               <p><strong>Error:</strong> {result.error}</p>
+              {result.apiUrl && <p><strong>API URL:</strong> {result.apiUrl}</p>}
             </div>
           )}
         </div>
