@@ -24,6 +24,8 @@ Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/opt/dietguard/.env
 # Run using the project virtualenv's uvicorn to ensure dependencies are available
 ExecStart=/opt/dietguard/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
+StandardOutput=append:/var/log/dietguard-backend.log
+StandardError=append:/var/log/dietguard-backend.log
 Restart=always
 RestartSec=10
 
