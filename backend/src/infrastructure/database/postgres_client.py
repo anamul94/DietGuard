@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from .database import AsyncSessionLocal
@@ -15,7 +15,7 @@ class PostgresClient:
             await session.execute(delete(ReportData).where(ReportData.user_id == user_id))
             
             # Create new record
-            expires_at = datetime.utcnow() + timedelta(hours=expiration_hours)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expiration_hours)
             report = ReportData(
                 user_id=user_id,
                 data=json.dumps(data),
@@ -27,7 +27,7 @@ class PostgresClient:
     async def get_report_data(self, user_id: str):
         async with AsyncSessionLocal() as session:
             # Clean expired records
-            await session.execute(delete(ReportData).where(ReportData.expires_at < datetime.utcnow()))
+            await session.execute(delete(ReportData).where(ReportData.expires_at < datetime.now(timezone.utc)))
             await session.commit()
             
             # Get data
@@ -36,7 +36,7 @@ class PostgresClient:
             )
             report = result.scalar_one_or_none()
             
-            if report and report.expires_at > datetime.utcnow():
+            if report and report.expires_at > datetime.now(timezone.utc):
                 return {"data": json.loads(report.data)}
             return None
     
@@ -46,7 +46,7 @@ class PostgresClient:
             await session.execute(delete(NutritionData).where(NutritionData.user_id == user_id))
             
             # Create new record
-            expires_at = datetime.utcnow() + timedelta(hours=expiration_hours)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expiration_hours)
             nutrition = NutritionData(
                 user_id=user_id,
                 data=json.dumps(data),
@@ -58,7 +58,7 @@ class PostgresClient:
     async def get_nutrition_data(self, user_id: str):
         async with AsyncSessionLocal() as session:
             # Clean expired records
-            await session.execute(delete(NutritionData).where(NutritionData.expires_at < datetime.utcnow()))
+            await session.execute(delete(NutritionData).where(NutritionData.expires_at < datetime.now(timezone.utc)))
             await session.commit()
             
             # Get data
@@ -67,7 +67,7 @@ class PostgresClient:
             )
             nutrition = result.scalar_one_or_none()
             
-            if nutrition and nutrition.expires_at > datetime.utcnow():
+            if nutrition and nutrition.expires_at > datetime.now(timezone.utc):
                 return {"data": json.loads(nutrition.data)}
             return None
     

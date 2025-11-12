@@ -1,4 +1,4 @@
-.PHONY: build run stop clean dev install
+.PHONY: build run stop clean dev install setup-db migrate
 
 IMAGE_NAME = prodmeasure
 CONTAINER_NAME = prodmeasure-app
@@ -20,3 +20,9 @@ dev:
 
 install:
 	uv sync
+
+setup-db:
+	uv run python setup_database.py
+
+migrate:
+	uv run alembic upgrade head
