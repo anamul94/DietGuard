@@ -73,12 +73,13 @@ async def health_check():
         await postgres_client.health_check()
         health_status["checks"]["database"] = "healthy"
         logger.info("Database health check passed")
+        return health_status
     except Exception as e:
         health_status["checks"]["database"] = "unhealthy"
-        health_status["status"] = "degraded"
+        health_status["status"] = "unhealthy"
         logger.error("Database health check failed", error=str(e))
-    
-    return health_status
+        # Return 500 status code for Route53 health check failover
+        raise HTTPException(status_code=500, detail=health_status)
 
 
 @app.get("/get_report/{user_id}")
