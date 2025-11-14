@@ -17,6 +17,22 @@ import json
 # Create FastAPI app first
 app = FastAPI()
 
+@app.on_event("startup")
+async def startup_event():
+    """Create database tables on startup if they don't exist"""
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from ...infrastructure.database.database import DATABASE_URL, Base
+        
+        engine = create_async_engine(DATABASE_URL)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await engine.dispose()
+        print("✅ Database tables created/verified successfully")
+    except Exception as e:
+        print(f"⚠️ Database table creation failed: {e}")
+        # Don't fail startup - app can still run without DB for some endpoints
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
