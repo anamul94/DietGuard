@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+from ..utils.logger import logger
 
 
 async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time: str) -> str:
@@ -11,6 +12,8 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
     medical_report: Medical report data from Redis
     meal_time: Time when food is consumed (breakfast, lunch, dinner, snack)
     """
+    logger.info("Nutritionist agent invoked", meal_time=meal_time)
+    
     # Load environment variables
     load_dotenv()
 
@@ -20,6 +23,8 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
     aws_region = os.getenv("AWS_REGION")
 
     if not all([aws_key, aws_secret, aws_region]):
+        logger.error("Nutritionist agent configuration error - missing AWS credentials",
+                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
         return f"Environment variables not loaded. AWS_ACCESS_KEY_ID: {'✓' if aws_key else '✗'}, AWS_SECRET_ACCESS_KEY: {'✓' if aws_secret else '✗'}, AWS_REGION: {'✓' if aws_region else '✗'}"
 
     try:
@@ -29,6 +34,7 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
             region_name=aws_region,
         )
     except Exception as e:
+        logger.error("Nutritionist agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return f"Model initialization failed: {str(e)}"
 
     system_message = {
@@ -89,6 +95,8 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
         # Flush events to Langfuse
         flush_langfuse()
         
+        logger.info("Nutritionist agent completed successfully", meal_time=meal_time)
         return response.text() if hasattr(response, "text") else str(response)
     except Exception as e:
+        logger.error("Nutritionist agent model invocation failed", error=str(e), exception_type=type(e).__name__, meal_time=meal_time)
         return f"Model invocation failed: {str(e)}"

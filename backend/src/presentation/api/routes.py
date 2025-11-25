@@ -24,13 +24,14 @@ async def startup_event():
         from sqlalchemy.ext.asyncio import create_async_engine
         from ...infrastructure.database.database import DATABASE_URL, Base
         
+        logger.info("Starting database initialization")
         engine = create_async_engine(DATABASE_URL)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         await engine.dispose()
-        print("✅ Database tables created/verified successfully")
+        logger.info("Database tables created/verified successfully")
     except Exception as e:
-        print(f"⚠️ Database table creation failed: {e}")
+        logger.error("Database table creation failed", error=str(e), exception_type=type(e).__name__)
         # Don't fail startup - app can still run without DB for some endpoints
 
 # Add CORS middleware
@@ -43,6 +44,52 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Add request/response logging middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import time
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        
+        # Log request
+        logger.info(
+            "Request started",
+            method=request.method,
+            path=request.url.path,
+            client_ip=request.client.host if request.client else "unknown"
+        )
+        
+        # Process request
+        try:
+            response = await call_next(request)
+            duration = time.time() - start_time
+            
+            # Log response
+            logger.info(
+                "Request completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=round(duration * 1000, 2)
+            )
+            
+            return response
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(
+                "Request failed",
+                method=request.method,
+                path=request.url.path,
+                error=str(e),
+                exception_type=type(e).__name__,
+                duration_ms=round(duration * 1000, 2)
+            )
+            raise
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # Create Socket.IO server
 sio = socketio.AsyncServer(
