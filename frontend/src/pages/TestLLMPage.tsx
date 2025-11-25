@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { logger } from '../utils/logger';
 
 const TestLLMPage: React.FC = () => {
   const [result, setResult] = useState<any>(null);
@@ -7,22 +8,26 @@ const TestLLMPage: React.FC = () => {
   const testLLM = async () => {
     setLoading(true);
     setResult(null);
-    
+
     const apiUrl = `${process.env.REACT_APP_API_URL}/test_llm`;
-    console.log('Testing API URL:', apiUrl);
-    
+    logger.debug('Testing LLM API', { apiUrl });
+
+    const timer = logger.startTimer('llm-test');
+
     try {
       const response = await fetch(apiUrl);
-      console.log('Response status:', response.status);
-      
+      logger.info('LLM API response received', { status: response.status });
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setResult(data);
+
+      timer.done('LLM test completed successfully', { status: data.status });
     } catch (error: any) {
-      console.error('API Error:', error);
+      logger.error('LLM API test failed', error, { apiUrl });
       setResult({
         status: 'error',
         error: error.message,
@@ -36,7 +41,7 @@ const TestLLMPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-6">LLM Connection Test</h1>
-      
+
       <button
         onClick={testLLM}
         disabled={loading}

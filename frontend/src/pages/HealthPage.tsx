@@ -14,8 +14,9 @@ const HealthPage: React.FC = () => {
         const response = await axios.get(`${process.env.REACT_APP_API_URL}/health`);
         logger.info('Health status received', response.data);
         setHealthStatus(response.data);
-      } catch (err) {
-        logger.error('Failed to fetch health status', err);
+      } catch (err: any) {
+        const error = err as Error;
+        logger.error('Failed to fetch health status', error);
         setError('Failed to fetch health status');
       } finally {
         setLoading(false);

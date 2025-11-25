@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Upload, Loader, CheckCircle, AlertCircle, Smartphone, X } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { uploadFood } from '../utils/api';
+import { logger } from '../utils/logger';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import BackButton from '../components/BackButton';
 
@@ -18,7 +19,7 @@ const UploadFoodPage: React.FC = () => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth <= 768);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -36,17 +37,32 @@ const UploadFoodPage: React.FC = () => {
 
     setLoading(true);
     setError('');
-    
+
+    // Start performance timer
+    const timer = logger.startTimer('food-upload');
+
     try {
       // Convert File[] to FileList for API
       const dt = new DataTransfer();
       files.forEach(file => dt.items.add(file));
       const fileList = dt.files;
-      
+
       const response = await uploadFood(mobileOrEmail, mealTime, fileList);
       setResult(response);
+
+      // Log successful upload with timing
+      timer.done('Food upload and analysis completed', {
+        user: mobileOrEmail,
+        mealTime,
+        fileCount: files.length,
+      });
     } catch (err: any) {
-      console.error('Upload error:', err);
+      logger.error('Food upload error in component', err, {
+        user: mobileOrEmail,
+        mealTime,
+        fileCount: files.length,
+        errorDetail: err.response?.data?.detail,
+      });
       setError(err.response?.data?.detail || err.message || 'Upload failed');
     } finally {
       setLoading(false);
@@ -73,7 +89,7 @@ const UploadFoodPage: React.FC = () => {
               <Smartphone className="h-5 w-5 text-nutrition-600" />
               <h3 className="text-lg font-semibold text-gray-800">Mobile Upload</h3>
             </div>
-            
+
             <div className="text-center">
               <div className="bg-white p-4 rounded-lg inline-block shadow-sm">
                 <QRCode value={currentUrl} size={200} />
@@ -145,7 +161,7 @@ const UploadFoodPage: React.FC = () => {
                   </label>
                   <p className="text-xs text-nutrition-600 mt-1">Use camera to capture food</p>
                 </div>
-                
+
                 {/* Gallery Button - Secondary */}
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-nutrition-400 transition-colors">
                   <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
@@ -227,11 +243,11 @@ const UploadFoodPage: React.FC = () => {
               <CheckCircle className="h-6 w-6 text-green-600" />
               <h2 className="text-xl font-semibold text-gray-800">Analysis Complete</h2>
             </div>
-            
+
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
               <p className="text-green-800">
-                <strong>Meal:</strong> {result.meal_time} | 
-                <strong> Images:</strong> {result.files_processed} | 
+                <strong>Meal:</strong> {result.meal_time} |
+                <strong> Images:</strong> {result.files_processed} |
                 <strong> Patient:</strong> {result.user_email}
               </p>
             </div>
@@ -241,7 +257,7 @@ const UploadFoodPage: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">🍎 Dr. James Rodriguez - Food Analysis:</h3>
                 <MarkdownRenderer content={result.food_analysis} />
               </div>
-              
+
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">🏥 Dr. Sarah Mitchell - Nutritional Recommendations:</h3>
                 <MarkdownRenderer content={result.nutritionist_recommendations} />
