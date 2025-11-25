@@ -3,12 +3,15 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+from ..utils.logger import logger
 
 
 async def summary_agent(nutrition_report: str) -> str:
     """
     nutrition_report: Raw nutritional report text that needs a spoken-style summary
     """
+    logger.info("Summary agent invoked")
+    
     # Load environment variables
     load_dotenv()
 
@@ -18,6 +21,8 @@ async def summary_agent(nutrition_report: str) -> str:
     aws_region = os.getenv("AWS_REGION")
 
     if not all([aws_key, aws_secret, aws_region]):
+        logger.error("Summary agent configuration error - missing AWS credentials",
+                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
         return (
             "Environment variables not loaded. "
             f"AWS_ACCESS_KEY_ID: {'✓' if aws_key else '✗'}, "
@@ -33,6 +38,7 @@ async def summary_agent(nutrition_report: str) -> str:
             region_name=aws_region,
         )
     except Exception as e:
+        logger.error("Summary agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return f"Model initialization failed: {str(e)}"
 
     system_message = {
@@ -83,6 +89,8 @@ async def summary_agent(nutrition_report: str) -> str:
         # Flush events to Langfuse
         flush_langfuse()
 
+        logger.info("Summary agent completed successfully")
         return response.text() if hasattr(response, "text") else str(response)
     except Exception as e:
+        logger.error("Summary agent model invocation failed", error=str(e), exception_type=type(e).__name__)
         return f"Model invocation failed: {str(e)}"

@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_aws import ChatBedrock
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+from ..utils.logger import logger
 
 
 async def report_agent(data: str, type: str, mime_type: str) -> str:
@@ -12,6 +13,8 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
     type: "image" | "file" | "audio" | "text"
     mime_type: e.g. "image/jpeg" or "application/pdf"
     """
+    logger.info("Report agent invoked", file_type=type, mime_type=mime_type)
+    
     # Load environment variables
     load_dotenv()
 
@@ -21,6 +24,8 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
     aws_region = os.getenv("AWS_REGION")
 
     if not all([aws_key, aws_secret, aws_region]):
+        logger.error("Report agent configuration error - missing AWS credentials",
+                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
         return f"Environment variables not loaded. AWS_ACCESS_KEY_ID: {'✓' if aws_key else '✗'}, AWS_SECRET_ACCESS_KEY: {'✓' if aws_secret else '✗'}, AWS_REGION: {'✓' if aws_region else '✗'}"
 
     try:
@@ -30,6 +35,7 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
             region_name=aws_region,
         )
     except Exception as e:
+        logger.error("Report agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return f"Model initialization failed: {str(e)}"
 
     # llm = ChatBedrock(
@@ -80,6 +86,8 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
         # Flush events to Langfuse
         flush_langfuse()
         
+        logger.info("Report agent completed successfully", file_type=type, mime_type=mime_type)
         return response.text() if hasattr(response, "text") else str(response)
     except Exception as e:
+        logger.error("Report agent model invocation failed", error=str(e), exception_type=type(e).__name__, file_type=type)
         return f"Model invocation failed: {str(e)}"

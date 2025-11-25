@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+from ..utils.logger import logger
 from .agent_response import AgentResponse
 
 
@@ -12,6 +13,9 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
     type: "image" OR list of "image" for multiple images
     mime_type: e.g. "image/jpeg" OR list of mime types for multiple images
     """
+    image_count = len(data) if isinstance(data, list) else 1
+    logger.info("Food agent invoked", image_count=image_count)
+    
     # Load environment variables
     load_dotenv()
 
@@ -21,6 +25,8 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
     aws_region = os.getenv("AWS_REGION")
 
     if not all([aws_key, aws_secret, aws_region]):
+        logger.error("Food agent configuration error - missing AWS credentials", 
+                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
         return AgentResponse.error_response("Configuration error. Please try again later.")
 
     try:
@@ -31,6 +37,7 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
             temperature=0.1,
         )
     except Exception as e:
+        logger.error("Food agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
     system_message = {
@@ -95,7 +102,8 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
         # Flush events to Langfuse
         flush_langfuse()
         
+        logger.info("Food agent completed successfully", image_count=image_count)
         return AgentResponse.success_response(response.text() if hasattr(response, "text") else str(response))
     except Exception as e:
-        print(f"Model invocation failed: {str(e)}")
+        logger.error("Food agent model invocation failed", error=str(e), exception_type=type(e).__name__, image_count=image_count)
         return AgentResponse.error_response("Unable to analyze food items at this time. Please try again later.") 
