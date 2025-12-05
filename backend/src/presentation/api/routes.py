@@ -118,7 +118,7 @@ async def health_check():
     try:
         # postgres_client = PostgresClient()
         # await postgres_client.health_check()
-        health_status["checks"]["database"] = "healthy"
+        health_status["checks"]["database"] = "healthy no db"
         logger.info("Database health check passed")
         return health_status
     except Exception as e:
