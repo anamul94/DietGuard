@@ -1,0 +1,137 @@
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, Index
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+import uuid
+from .database import Base
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    age = Column(Integer, nullable=True)
+    gender = Column(String(20), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    user_roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
+    upload_limits = relationship("UploadLimit", back_populates="user", cascade="all, delete-orphan")
+    audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete-orphan")
+
+class Role(Base):
+    __tablename__ = "roles"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    name = Column(String(50), unique=True, nullable=False, index=True)
+    description = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    user_roles = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="user_roles")
+    role = relationship("Role", back_populates="user_roles")
+    
+    # Unique constraint
+    __table_args__ = (
+        Index('idx_user_role_unique', 'user_id', 'role_id', unique=True),
+    )
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    plan_type = Column(String(20), nullable=False, default="free")  # 'free' or 'paid'
+    status = Column(String(20), nullable=False, default="active")  # 'active', 'inactive', 'cancelled'
+    start_date = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="subscriptions")
+    payments = relationship("Payment", back_populates="subscription", cascade="all, delete-orphan")
+
+class Payment(Base):
+    __tablename__ = "payments"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subscription_id = Column(UUID(as_uuid=True), ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True, index=True)
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(String(3), nullable=False, default="USD")
+    payment_method = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False, default="pending")  # 'pending', 'completed', 'failed', 'refunded'
+    stripe_payment_id = Column(String(255), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="payments")
+    subscription = relationship("Subscription", back_populates="payments")
+
+class UploadLimit(Base):
+    __tablename__ = "upload_limits"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    date = Column(DateTime(timezone=True), nullable=False, index=True)
+    upload_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="upload_limits")
+    
+    # Unique constraint - one record per user per day
+    __table_args__ = (
+        Index('idx_user_date_unique', 'user_id', 'date', unique=True),
+    )
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String(100), nullable=False, index=True)
+    resource = Column(String(100), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    extra_data = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="audit_logs")
+
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(255), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="password_resets")

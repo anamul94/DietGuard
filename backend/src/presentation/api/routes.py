@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
@@ -10,12 +10,33 @@ from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent
 from ...infrastructure.database.postgres_client import PostgresClient
+from ...infrastructure.database.database import get_db
+from ...infrastructure.database.auth_models import User
+from ...infrastructure.auth.dependencies import get_current_active_user
+from ...application.services.subscription_service import SubscriptionService
+from sqlalchemy.ext.asyncio import AsyncSession
 # from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 
 import json
 
+# Import routers
+from .auth_routes import router as auth_router
+from .user_routes import router as user_router
+from .payment_routes import router as payment_router
+from .admin_routes import router as admin_router
+
 # Create FastAPI app first
-app = FastAPI()
+app = FastAPI(
+    title="DietGuard API",
+    description="AI-Powered Nutritionist with Authentication",
+    version="1.0.0"
+)
+
+# Include routers
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(payment_router)
+app.include_router(admin_router)
 
 @app.on_event("startup")
 async def startup_event():
@@ -150,11 +171,21 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 @app.post("/upload_food/")
 async def upload_food(
-    mobile_or_email: str = Form(..., description="User's mobile/email"),
     meal_time: str = Form(..., description="Meal time: breakfast, lunch, dinner, snack"),
     files: List[UploadFile] = File(..., description="Food images"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    logger.info("Food upload started", user=mobile_or_email, meal_time=meal_time, file_count=len(files))
+    logger.info("Food upload started", user_id=str(current_user.id), meal_time=meal_time, file_count=len(files))
+    
+    # Check upload limits
+    try:
+        limit_check = await SubscriptionService.check_upload_limit(db, current_user)
+        logger.info("Upload limit check passed", user_id=str(current_user.id), remaining=limit_check.get("remaining_uploads"))
+    except ValueError as e:
+        logger.warning("Upload limit exceeded", user_id=str(current_user.id), error=str(e))
+        raise HTTPException(status_code=429, detail=str(e))
+    
     allowed_extensions = {".jpg", ".jpeg", ".png"}
     allowed_meal_times = {"breakfast", "lunch", "dinner", "snack"}
     
@@ -196,14 +227,14 @@ async def upload_food(
 
         # Get medical report data
         postgres_client = PostgresClient()
-        medical_data = await postgres_client.get_report_data(mobile_or_email)
+        medical_data = await postgres_client.get_report_data(current_user.email)
         medical_report = medical_data.get('data', {}).get('combined_response', 'No medical report available') if medical_data else 'No medical report available'
 
         # Get nutritionist recommendations
         nutritionist_advice = await nutritionist_agent(food_analysis, medical_report, meal_time)
 
         result_data = {
-            "user_email": mobile_or_email,
+            "user_email": current_user.email,
             "meal_time": meal_time,
             "files_processed": len(files),
             "filenames": filenames,
@@ -212,7 +243,10 @@ async def upload_food(
         }
 
         # Save to PostgreSQL with nutrition data type
-        await postgres_client.save_nutrition_data(mobile_or_email, result_data)
+        await postgres_client.save_nutrition_data(current_user.email, result_data)
+        
+        # Increment upload count
+        await SubscriptionService.increment_upload_count(db, current_user)
 
         # Get formatted summary for speech
         formated_summary_for_speech = await summary_agent(nutritionist_advice)
@@ -222,11 +256,13 @@ async def upload_food(
         asyncio.create_task(sio.emit('food_analysis_complete', formated_summary_for_speech))
         # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
 
-        logger.info("Food upload completed successfully", user=mobile_or_email, meal_time=meal_time, files_processed=len(files))
+        logger.info("Food upload completed successfully", user_id=str(current_user.id), meal_time=meal_time, files_processed=len(files))
         return result_data
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Food upload failed", user=mobile_or_email, meal_time=meal_time, error=str(e))
+        logger.error("Food upload failed", user_id=str(current_user.id), meal_time=meal_time, error=str(e))
         raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
 
 
@@ -268,10 +304,10 @@ async def debug_redis(user_id: str):
 
 @app.post("/upload_report/")
 async def upload_report(
-    mobile_or_email: str = Form(..., description="User's mobile/email"),
     files: List[UploadFile] = File(..., description="Image or PDF files"),
+    current_user: User = Depends(get_current_active_user)
 ):
-    logger.info("Report upload started", user=mobile_or_email, file_count=len(files))
+    logger.info("Report upload started", user_id=str(current_user.id), file_count=len(files))
     # Validate mobile number
     # if not mobile_number.strip() or len(mobile_number) < 10:
     #     raise HTTPException(status_code=400, detail="Valid mobile number is required")
@@ -313,7 +349,7 @@ async def upload_report(
         combined_response = "\n\n".join([f"File: {r['filename']}\n{r['response']}" for r in responses])
 
         result_data = {
-            "mobile_number": mobile_or_email,
+            "mobile_number": current_user.email,
             "files_processed": len(files),
             "individual_responses": responses,
             "combined_response": combined_response
@@ -321,13 +357,13 @@ async def upload_report(
 
         # Save to PostgreSQL with 12 hours expiration
         postgres_client = PostgresClient()
-        await postgres_client.save_report_data(mobile_or_email, result_data, expiration_hours=12)
+        await postgres_client.save_report_data(current_user.email, result_data, expiration_hours=12)
         
-        logger.info("Report upload completed successfully", user=mobile_or_email, files_processed=len(files))
+        logger.info("Report upload completed successfully", user_id=str(current_user.id), files_processed=len(files))
         return result_data
 
     except Exception as e:
-        logger.error("Report upload failed", user=mobile_or_email, error=str(e))
+        logger.error("Report upload failed", user_id=str(current_user.id), error=str(e))
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
 

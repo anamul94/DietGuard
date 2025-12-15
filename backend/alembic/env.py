@@ -7,6 +7,7 @@ from alembic import context
 from src.infrastructure.database.database import Base, DATABASE_URL
 import os
 from src.infrastructure.database.models import *
+from src.infrastructure.database.auth_models import *
 
 config = context.config
 # Ensure Alembic uses the same DB URL as the app
