@@ -10,7 +10,7 @@ from ...infrastructure.database.auth_models import User, AuditLog, Role, UserRol
 from ...infrastructure.auth.dependencies import require_admin
 from ...infrastructure.utils.logger import logger
 
-router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
+router = APIRouter(tags=["Admin"])
 
 # Response Models
 class UserListItem(BaseModel):

@@ -15,9 +15,9 @@ class NutritionAdviceRequest(BaseModel):
         ..., 
         description="Structured food analysis object returned from /upload_food/ endpoint"
     )
-    meal_time: str = Field(
+    meal_type: str = Field(
         ..., 
-        description="Time of meal",
+        description="Type of meal",
         pattern="^(breakfast|lunch|dinner|snack)$"
     )
     age: int = Field(
@@ -73,7 +73,7 @@ class NutritionAdviceRequest(BaseModel):
                         "sugar": "8g"
                     }
                 },
-                "meal_time": "breakfast",
+                "meal_type": "breakfast",
                 "age": 25,
                 "gender": "male",
                 "weight": 75.5,
@@ -86,7 +86,7 @@ class NutritionAdviceRequest(BaseModel):
 class NutritionAdviceResponse(BaseModel):
     """Response model for nutrition advice endpoint"""
     user_email: str = Field(..., description="Email of the user")
-    meal_time: str = Field(..., description="Meal time for which advice was generated")
+    meal_type: str = Field(..., description="Meal type for which advice was generated")
     nutritionist_recommendations: str = Field(
         ..., 
         description="AI-generated nutritionist recommendations based on food analysis and user profile"
@@ -96,7 +96,7 @@ class NutritionAdviceResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "user_email": "user@example.com",
-                "meal_time": "breakfast",
+                "meal_type": "breakfast",
                 "nutritionist_recommendations": "This meal provides good protein content. Consider adding vegetables for fiber..."
             }
         }

@@ -1,11 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
+from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
-import secrets
-import uuid
 
-from ...infrastructure.database.auth_models import User, Role, UserRole, Subscription, PasswordReset
+from ...infrastructure.database.auth_models import User, Role, UserRole, Subscription, PasswordReset, Package
 from ...infrastructure.auth.password import hash_password, verify_password, validate_password_strength
 from ...infrastructure.auth.jwt import create_access_token, create_refresh_token
 from ...infrastructure.utils.logger import logger
@@ -80,25 +79,74 @@ class AuthService:
         if user_role_obj:
             user_role = UserRole(user_id=user.id, role_id=user_role_obj.id)
             db.add(user_role)
-        
-        # Create 7-day paid trial subscription for new users
-        trial_end_date = datetime.now(timezone.utc) + timedelta(days=7)
-        subscription = Subscription(
-            user_id=user.id,
-            plan_type="paid",
-            status="active",
-            end_date=trial_end_date
-        )
-        db.add(subscription)
+            
+            # Get the Free package (will be used after trial)
+            free_package_result = await db.execute(
+                select(Package).where(Package.name == "Free")
+            )
+            free_package = free_package_result.scalar_one_or_none()
+            
+            if not free_package:
+                raise ValueError("Free package not found. Please run seed_packages.py")
+            
+            # Create subscription with 7-day paid trial
+            # During trial: user gets paid tier limits (20 uploads/day)
+            # After trial: reverts to Free package limits (2 uploads/day)
+            trial_end_date = datetime.now(timezone.utc) + timedelta(days=7)
+            
+            subscription = Subscription(
+                user_id=user.id,
+                package_id=free_package.id,  # Assigned to Free package
+                plan_type="paid",  # Paid trial for 7 days
+                status="active",
+                end_date=trial_end_date  # Trial expires after 7 days
+            )
+            db.add(subscription)
         
         await db.commit()
-        await db.refresh(user)
+        
+        # Refresh user with relationships
+        await db.refresh(user, ["user_roles"])
+        
+        # Eagerly load role names
+        for ur in user.user_roles:
+            await db.refresh(ur, ["role"])
         
         logger.info("User registered successfully", user_id=str(user.id), email=email)
         
         # Generate tokens
-        access_token = create_access_token({"sub": str(user.id), "email": user.email})
-        refresh_token = create_refresh_token({"sub": str(user.id), "email": user.email})
+        access_token = create_access_token({
+            "sub": str(user.id),
+            "email": user.email
+        })
+        refresh_token = create_refresh_token({
+            "sub": str(user.id),
+            "email": user.email
+        })
+        
+        # Get subscription info with package details
+        subscription = await db.execute(
+            select(Subscription).where(
+                and_(
+                    Subscription.user_id == user.id,
+                    Subscription.status == 'active'
+                )
+            ).options(selectinload(Subscription.package))
+        )
+        active_subscription = subscription.scalar_one_or_none()
+        
+        # Build subscription response
+        subscription_info = {
+            "is_paid": True,  # 7-day paid trial
+            "type": "paid",
+            "status": "active",
+            "trial_ends_at": active_subscription.end_date.isoformat() if active_subscription and active_subscription.end_date else None,
+            "package": {
+                "name": active_subscription.package.name if active_subscription and active_subscription.package else "Free",
+                "daily_upload_limit": 20,  # During trial, paid limits apply
+                "daily_nutrition_limit": 20
+            }
+        }
         
         return {
             "user": {
@@ -111,7 +159,8 @@ class AuthService:
                 "weight": float(user.weight) if user.weight else None,
                 "height": float(user.height) if user.height else None,
                 "is_active": user.is_active,
-                "roles": [ur.role.name for ur in user.user_roles]
+                "roles": [ur.role.name for ur in user.user_roles],
+                "subscription": subscription_info
             },
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -146,7 +195,7 @@ class AuthService:
                     User.is_active == True,
                     User.deleted_at == None
                 )
-            )
+            ).options(selectinload(User.user_roles).selectinload(UserRole.role))
         )
         user = result.scalar_one_or_none()
         
@@ -162,15 +211,53 @@ class AuthService:
         logger.info("User authenticated successfully", user_id=str(user.id), email=email)
         
         # Generate tokens
-        access_token = create_access_token({"sub": str(user.id), "email": user.email})
-        refresh_token = create_refresh_token({"sub": str(user.id), "email": user.email})
+        access_token = create_access_token({
+            "sub": str(user.id),
+            "email": user.email
+        })
+        refresh_token = create_refresh_token({
+            "sub": str(user.id),
+            "email": user.email
+        })
+        
+        # Get subscription info
+        subscription = await db.execute(
+            select(Subscription).where(
+                and_(
+                    Subscription.user_id == user.id,
+                    Subscription.status == 'active'
+                )
+            )
+        )
+        active_subscription = subscription.scalar_one_or_none()
+        
+        # Determine subscription status
+        is_paid = False
+        subscription_type = "free"
+        subscription_status = "inactive"
+        
+        if active_subscription:
+            is_paid = active_subscription.plan_type == "paid"
+            subscription_type = active_subscription.plan_type
+            subscription_status = active_subscription.status
         
         return {
             "user": {
                 "id": str(user.id),
                 "email": user.email,
                 "first_name": user.first_name,
-                "last_name": user.last_name
+                "last_name": user.last_name,
+                "age": user.age,
+                "gender": user.gender,
+                "weight": float(user.weight) if user.weight else None,
+                "height": float(user.height) if user.height else None,
+                "is_active": user.is_active,
+                "roles": [ur.role.name for ur in user.user_roles],
+                "subscription": {
+                    "is_paid": is_paid,
+                    "type": subscription_type,
+                    "status": subscription_status
+                }
             },
             "access_token": access_token,
             "refresh_token": refresh_token,

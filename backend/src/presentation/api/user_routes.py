@@ -11,7 +11,7 @@ from ...application.services.subscription_service import SubscriptionService
 from ...application.services.audit_service import AuditService
 from ...infrastructure.utils.logger import logger
 
-router = APIRouter(prefix="/api/v1/users", tags=["Users"])
+router = APIRouter(tags=["Users"])
 
 # Response Models
 class UserProfile(BaseModel):

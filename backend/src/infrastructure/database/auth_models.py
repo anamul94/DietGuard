@@ -1,8 +1,9 @@
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, Index, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
+
 from .database import Base
 
 class User(Base):
@@ -30,6 +31,26 @@ class User(Base):
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
     password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete-orphan")
     token_usage = relationship("TokenUsage", back_populates="user", cascade="all, delete-orphan")
+
+
+class Package(Base):
+    """Subscription package/plan model - defines available subscription tiers"""
+    __tablename__ = "packages"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    name = Column(String(50), nullable=False, unique=True, index=True)  # 'Free', 'Monthly', 'Yearly'
+    price = Column(Numeric(10, 2), nullable=False, default=0.00)
+    billing_period = Column(String(20), nullable=False)  # 'free', 'monthly', 'yearly'
+    daily_upload_limit = Column(Integer, nullable=False, default=2)
+    daily_nutrition_limit = Column(Integer, nullable=False, default=2)
+    features = Column(JSON, nullable=True)  # Additional features as JSON
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    subscriptions = relationship("Subscription", back_populates="package")
+
 
 class Role(Base):
     __tablename__ = "roles"
@@ -61,19 +82,22 @@ class UserRole(Base):
     )
 
 class Subscription(Base):
+    """User subscription model - tracks which package a user is subscribed to"""
     __tablename__ = "subscriptions"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    plan_type = Column(String(20), nullable=False, default="free")  # 'free' or 'paid'
+    package_id = Column(UUID(as_uuid=True), ForeignKey("packages.id"), nullable=True, index=True)  # Which package user is on
+    plan_type = Column(String(20), nullable=False, default="free")  # 'free' or 'paid' (derived from package)
     status = Column(String(20), nullable=False, default="active")  # 'active', 'inactive', 'cancelled'
     start_date = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    end_date = Column(DateTime(timezone=True), nullable=True)
+    end_date = Column(DateTime(timezone=True), nullable=True)  # When subscription expires
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")
+    package = relationship("Package", back_populates="subscriptions")  # Link to package
     payments = relationship("Payment", back_populates="subscription", cascade="all, delete-orphan")
 
 class Payment(Base):

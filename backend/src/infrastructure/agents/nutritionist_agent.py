@@ -7,14 +7,14 @@ from ..utils.logger import logger
 from .agent_response import AgentResponse
 
 
-async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time: str, gender: str, age: int, weight: float, height: float) -> AgentResponse:
+async def nutritionist_agent(food_analysis: str, medical_report: str, meal_type: str, gender: str, age: int, weight: float, height: float) -> AgentResponse:
     """
     Generate personalized nutritionist recommendations based on food analysis and user profile.
     
     Args:
         food_analysis: Analysis from food agent
         medical_report: Medical report data
-        meal_time: Time of meal (breakfast, lunch, dinner, snack)
+        meal_type: Type of meal (breakfast, lunch, dinner, snack)
         gender: User's gender
         age: User's age in years
         weight: User's weight in kg
@@ -23,7 +23,7 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
     Returns:
         Nutritionist recommendations as string
     """
-    logger.info("Nutritionist agent invoked", meal_time=meal_time, age=age, gender=gender)
+    logger.info("Nutritionist agent invoked", meal_type=meal_type, age=age, gender=gender)
     
     # Load environment variables
     load_dotenv()
@@ -71,7 +71,7 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
             f"- Weight: {weight} kg\n"
             f"- Height: {height} cm\n"
             f"- BMI: {bmi:.1f}\n"
-            f"- Meal Time: {meal_time}\n\n"
+            f"- Meal Type: {meal_type}\n\n"
             f"**Food Analysis:**\n{food_analysis}\n\n"
             f"**Medical Report:**\n{medical_report}\n\n"
             "Based on this user's profile, the food they consumed, and their medical history, "
@@ -120,12 +120,12 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
         response_text = response.text() if hasattr(response, "text") else str(response)
         
         logger.info("Nutritionist agent completed successfully", 
-                   meal_time=meal_time, 
+                   meal_type=meal_type, 
                    age=age, 
                    gender=gender,
                    token_usage=usage)
         
         return AgentResponse.success_response(response_text, metadata=metadata)
     except Exception as e:
-        logger.error("Nutritionist agent model invocation failed", error=str(e), exception_type=type(e).__name__, meal_time=meal_time)
+        logger.error("Nutritionist agent model invocation failed", error=str(e), exception_type=type(e).__name__, meal_type=meal_type)
         return AgentResponse.error_response(f"Unable to generate nutritionist recommendations at this time. Please try again later.")

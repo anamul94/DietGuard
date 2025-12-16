@@ -25,6 +25,7 @@ import json
 from .auth_routes import router as auth_router
 from .user_routes import router as user_router
 from .payment_routes import router as payment_router
+from .package_routes import router as package_router
 from .admin_routes import router as admin_router
 
 # Create FastAPI app first
@@ -35,10 +36,11 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(auth_router)
-app.include_router(user_router)
-app.include_router(payment_router)
-app.include_router(admin_router)
+app.include_router(auth_router, prefix="/api/v1/auth")
+app.include_router(user_router, prefix="/api/v1/users")
+app.include_router(payment_router, prefix="/api/v1/payment")
+app.include_router(package_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1/admin")
 
 @app.on_event("startup")
 async def startup_event():
@@ -278,8 +280,8 @@ async def get_nutritionist_advice(
     
     **Limits:** Free users can get 2 nutrition analyses per day. Paid users have unlimited analyses.
     """
-    meal_time = request.meal_time
-    logger.info("Nutrition analysis started", user_id=str(current_user.id), meal_time=meal_time)
+    meal_type = request.meal_type
+    logger.info("Nutrition analysis started", user_id=str(current_user.id), meal_type=meal_type)
     
     # Check nutrition analysis limits
     try:
@@ -289,12 +291,12 @@ async def get_nutritionist_advice(
         logger.warning("Nutrition analysis limit exceeded", user_id=str(current_user.id), error=str(e))
         raise HTTPException(status_code=429, detail=str(e))
     
-    allowed_meal_times = {"breakfast", "lunch", "dinner", "snack"}
+    allowed_meal_types = {"breakfast", "lunch", "dinner", "snack"}
     
-    if meal_time.lower() not in allowed_meal_times:
+    if meal_type.lower() not in allowed_meal_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid meal time. Allowed: {', '.join(allowed_meal_times)}"
+            detail=f"Invalid meal type. Allowed: {', '.join(allowed_meal_types)}"
         )
     
     try:
@@ -309,7 +311,7 @@ async def get_nutritionist_advice(
         nutritionist_response = await nutritionist_agent(
             food_analysis=food_analysis_str,
             medical_report=medical_report_text,
-            meal_time=request.meal_time,
+            meal_type=request.meal_type,
             gender=request.gender,
             age=request.age,
             weight=request.weight,
@@ -339,12 +341,13 @@ async def get_nutritionist_advice(
                 cache_read_tokens=metadata.get("cache_read_tokens", 0)
             )
         
-        # Prepare data to save (only nutritionist recommendations + meal_time)
+        # Prepare data to save (nutritionist recommendations + meal_type + food_analysis)
         save_data = {
             "user_email": current_user.email,
-            "meal_time": request.meal_time,
+            "meal_type": request.meal_type,
             "age": request.age,
             "gender": request.gender,
+            "food_analysis": food_analysis_str,  # Save the food analysis data
             "nutritionist_recommendations": nutritionist_advice,
         }
         
@@ -364,17 +367,17 @@ async def get_nutritionist_advice(
         
         result_data = {
             "user_email": current_user.email,
-            "meal_time": request.meal_time,
+            "meal_type": request.meal_type,
             "nutritionist_recommendations": nutritionist_advice,
         }
         
-        logger.info("Nutrition analysis completed successfully", user_id=str(current_user.id), meal_time=meal_time)
+        logger.info("Nutrition analysis completed successfully", user_id=str(current_user.id), meal_type=meal_type)
         return result_data
     
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Nutrition analysis failed", user_id=str(current_user.id), meal_time=meal_time, error=str(e))
+        logger.error("Nutrition analysis failed", user_id=str(current_user.id), meal_type=meal_type, error=str(e))
         raise HTTPException(status_code=500, detail=f"Error processing nutrition analysis: {str(e)}")
 
 

@@ -9,7 +9,7 @@ from ...application.services.audit_service import AuditService
 from ...infrastructure.auth.jwt import verify_token, create_access_token
 from ...infrastructure.utils.logger import logger
 
-router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
+router = APIRouter(tags=["Authentication"])
 
 # Request/Response Models
 class SignUpRequest(BaseModel):
@@ -48,37 +48,39 @@ class MessageResponse(BaseModel):
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def signup(
     request: Request,
-    signup_data: SignUpRequest,
+    user_data: SignUpRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Register a new user account.
+    Register a new user with 7-day paid trial.
     
-    - **email**: Valid email address (unique)
-    - **password**: Minimum 8 characters with complexity requirements
-    - **firstName**: User's first name
-    - **lastName**: User's last name
-    - **age**: Optional age (1-150)
-    - **gender**: Optional gender
+    Args:
+        user_data: User registration data
+        
+    Returns:
+        User info and JWT tokens
+        
+    Raises:
+        HTTPException: 400 for validation errors or duplicate email
     """
     try:
         result = await AuthService.signup(
             db=db,
-            email=signup_data.email,
-            password=signup_data.password,
-            first_name=signup_data.first_name,
-            last_name=signup_data.last_name,
-            age=signup_data.age,
-            gender=signup_data.gender,
-            weight=signup_data.weight,
-            height=signup_data.height
+            email=user_data.email,
+            password=user_data.password,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            age=user_data.age,
+            gender=user_data.gender,
+            weight=user_data.weight,
+            height=user_data.height
         )
         
         # Log successful registration
         await AuditService.log_auth_event(
             db=db,
             action="signup_success",
-            email=signup_data.email,
+            email=user_data.email,
             success=True,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
@@ -106,27 +108,33 @@ async def signup(
 @router.post("/signin", response_model=AuthResponse)
 async def signin(
     request: Request,
-    signin_data: SignInRequest,
+    credentials: SignInRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Authenticate user and return JWT tokens.
+    Sign in a user.
     
-    - **email**: User's email address
-    - **password**: User's password
+    Args:
+        credentials: User credentials (email and password)
+        
+    Returns:
+        User info and JWT tokens
+        
+    Raises:
+        HTTPException: 401 for invalid credentials, 403 for inactive account
     """
     try:
         result = await AuthService.authenticate_user(
             db=db,
-            email=signin_data.email,
-            password=signin_data.password
+            email=credentials.email,
+            password=credentials.password
         )
         
         # Log successful login
         await AuditService.log_auth_event(
             db=db,
             action="login_success",
-            email=signin_data.email,
+            email=credentials.email,
             success=True,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
@@ -140,15 +148,44 @@ async def signin(
         await AuditService.log_auth_event(
             db=db,
             action="login_failed",
-            email=signin_data.email,
+            email=credentials.email,
+            success=False,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        error_msg = str(e).lower()
+        if "not found" in error_msg or "invalid" in error_msg or "incorrect" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        elif "inactive" in error_msg or "disabled" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is inactive. Please contact support."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication failed"
+            )
+    
+    except Exception as e:
+        # Log unexpected error
+        logger.error(f"Signin error: {str(e)}", exc_info=True)
+        await AuditService.log_auth_event(
+            db=db,
+            action="login_error",
+            email=credentials.email,
             success=False,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent")
         )
         
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service temporarily unavailable. Please try again later."
         )
 
 @router.post("/refresh-token", response_model=dict)

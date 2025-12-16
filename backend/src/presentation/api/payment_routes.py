@@ -10,7 +10,7 @@ from ...infrastructure.auth.dependencies import get_current_active_user
 from ...application.services.audit_service import AuditService
 from ...infrastructure.utils.logger import logger
 
-router = APIRouter(prefix="/api/v1/payments", tags=["Payments"])
+router = APIRouter(tags=["Payments"])
 
 # Request/Response Models
 class CreatePaymentRequest(BaseModel):
