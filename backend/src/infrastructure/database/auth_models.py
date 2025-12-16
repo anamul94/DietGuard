@@ -97,6 +97,7 @@ class UploadLimit(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     date = Column(DateTime(timezone=True), nullable=False, index=True)
     upload_count = Column(Integer, nullable=False, default=0)
+    nutrition_analysis_count = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     

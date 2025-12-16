@@ -91,7 +91,8 @@ class SubscriptionService:
             upload_limit = UploadLimit(
                 user_id=user.id,
                 date=today_start,
-                upload_count=0
+                upload_count=0,
+                nutrition_analysis_count=0
             )
             db.add(upload_limit)
             await db.flush()
@@ -144,7 +145,8 @@ class SubscriptionService:
             upload_limit = UploadLimit(
                 user_id=user.id,
                 date=today_start,
-                upload_count=1
+                upload_count=1,
+                nutrition_analysis_count=0
             )
             db.add(upload_limit)
         else:
@@ -157,6 +159,124 @@ class SubscriptionService:
             "Upload count incremented",
             user_id=str(user.id),
             new_count=upload_limit.upload_count
+        )
+    
+    @staticmethod
+    async def check_nutrition_limit(db: AsyncSession, user: User) -> Dict[str, Any]:
+        """
+        Check if user can request nutrition analysis based on their subscription and daily limits.
+        
+        Args:
+            db: Database session
+            user: User object
+            
+        Returns:
+            Dict with can_analyze, remaining_analyses, plan_type
+            
+        Raises:
+            ValueError: If limit exceeded
+        """
+        # Get active subscription
+        subscription = await SubscriptionService.get_active_subscription(db, user.id)
+        
+        if not subscription:
+            raise ValueError("No active subscription found")
+        
+        # Paid users have unlimited nutrition analyses
+        if subscription.plan_type == "paid":
+            return {
+                "can_analyze": True,
+                "remaining_analyses": -1,  # -1 indicates unlimited
+                "plan_type": "paid"
+            }
+        
+        # Free users: check daily limit
+        today = datetime.now(timezone.utc).date()
+        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+        
+        # Get or create today's upload limit record
+        result = await db.execute(
+            select(UploadLimit).where(
+                and_(
+                    UploadLimit.user_id == user.id,
+                    func.date(UploadLimit.date) == today
+                )
+            )
+        )
+        upload_limit = result.scalar_one_or_none()
+        
+        if not upload_limit:
+            upload_limit = UploadLimit(
+                user_id=user.id,
+                date=today_start,
+                upload_count=0,
+                nutrition_analysis_count=0
+            )
+            db.add(upload_limit)
+            await db.flush()
+        
+        # Check limit (2 nutrition analyses per day for free users)
+        max_analyses = settings.FREE_TIER_DAILY_UPLOAD_LIMIT  # Reuse same limit: 2
+        remaining = max_analyses - upload_limit.nutrition_analysis_count
+        
+        if upload_limit.nutrition_analysis_count >= max_analyses:
+            logger.warning(
+                "Nutrition analysis limit exceeded",
+                user_id=str(user.id),
+                current_count=upload_limit.nutrition_analysis_count,
+                max_analyses=max_analyses
+            )
+            raise ValueError(f"Daily nutrition analysis limit exceeded. Free tier allows {max_analyses} analyses per day.")
+        
+        return {
+            "can_analyze": True,
+            "remaining_analyses": remaining,
+            "plan_type": "free",
+            "current_count": upload_limit.nutrition_analysis_count,
+            "max_analyses": max_analyses
+        }
+    
+    @staticmethod
+    async def increment_nutrition_count(db: AsyncSession, user: User) -> None:
+        """
+        Increment user's nutrition analysis count for today.
+        
+        Args:
+            db: Database session
+            user: User object
+        """
+        today = datetime.now(timezone.utc).date()
+        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+        
+        # Get or create today's upload limit record
+        result = await db.execute(
+            select(UploadLimit).where(
+                and_(
+                    UploadLimit.user_id == user.id,
+                    func.date(UploadLimit.date) == today
+                )
+            )
+        )
+        upload_limit = result.scalar_one_or_none()
+        
+        if not upload_limit:
+            upload_limit = UploadLimit(
+                user_id=user.id,
+                date=today_start,
+                upload_count=0,
+                nutrition_analysis_count=1
+            )
+            db.add(upload_limit)
+        else:
+            upload_limit.nutrition_analysis_count += 1
+            upload_limit.updated_at = datetime.now(timezone.utc)
+        
+        await db.commit()
+        
+        logger.info(
+            "Nutrition analysis count incremented",
+            user_id=str(user.id),
+            new_count=upload_limit.nutrition_analysis_count
         )
     
     @staticmethod
@@ -194,13 +314,16 @@ class SubscriptionService:
         upload_limit = result.scalar_one_or_none()
         
         uploads_today = upload_limit.upload_count if upload_limit else 0
+        nutrition_analyses_today = upload_limit.nutrition_analysis_count if upload_limit else 0
         
         if subscription.plan_type == "paid":
             response = {
                 "plan_type": "paid",
                 "status": subscription.status,
                 "uploads_today": uploads_today,
-                "remaining_uploads": -1  # Unlimited
+                "remaining_uploads": -1,  # Unlimited
+                "nutrition_analyses_today": nutrition_analyses_today,
+                "remaining_analyses": -1  # Unlimited
             }
             
             # Add trial info if end_date exists
@@ -221,6 +344,9 @@ class SubscriptionService:
                 "uploads_today": uploads_today,
                 "remaining_uploads": max(0, max_uploads - uploads_today),
                 "max_daily_uploads": max_uploads,
+                "nutrition_analyses_today": nutrition_analyses_today,
+                "remaining_analyses": max(0, max_uploads - nutrition_analyses_today),
+                "max_daily_analyses": max_uploads,
                 "is_trial": False
             }
     

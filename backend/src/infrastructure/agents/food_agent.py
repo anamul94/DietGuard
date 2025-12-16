@@ -101,6 +101,8 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
         
         # Flush events to Langfuse
         flush_langfuse()
+
+        print(response)
         
         logger.info("Food agent completed successfully", image_count=image_count)
         return AgentResponse.success_response(response.text() if hasattr(response, "text") else str(response))

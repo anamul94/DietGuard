@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
 import asyncio
 import socketio
 from ...infrastructure.utils.logger import logger
@@ -171,12 +171,15 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 @app.post("/upload_food/")
 async def upload_food(
-    meal_time: str = Form(..., description="Meal time: breakfast, lunch, dinner, snack"),
     files: List[UploadFile] = File(..., description="Food images"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    logger.info("Food upload started", user_id=str(current_user.id), meal_time=meal_time, file_count=len(files))
+    """
+    Upload food images and get food analysis.
+    Returns only food_analysis without nutritionist recommendations.
+    """
+    logger.info("Food upload started", user_id=str(current_user.id), file_count=len(files))
     
     # Check upload limits
     try:
@@ -187,13 +190,6 @@ async def upload_food(
         raise HTTPException(status_code=429, detail=str(e))
     
     allowed_extensions = {".jpg", ".jpeg", ".png"}
-    allowed_meal_times = {"breakfast", "lunch", "dinner", "snack"}
-    
-    if meal_time.lower() not in allowed_meal_times:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid meal time. Allowed: {', '.join(allowed_meal_times)}"
-        )
     
     try:
         # Validate and encode all files
@@ -224,46 +220,103 @@ async def upload_food(
             raise HTTPException(status_code=500, detail=food_analysis_response.error_message)
         
         food_analysis = food_analysis_response.data
-
-        # Get medical report data
-        postgres_client = PostgresClient()
-        medical_data = await postgres_client.get_report_data(current_user.email)
-        medical_report = medical_data.get('data', {}).get('combined_response', 'No medical report available') if medical_data else 'No medical report available'
-
-        # Get nutritionist recommendations
-        nutritionist_advice = await nutritionist_agent(food_analysis, medical_report, meal_time)
-
-        result_data = {
-            "user_email": current_user.email,
-            "meal_time": meal_time,
-            "files_processed": len(files),
-            "filenames": filenames,
-            "food_analysis": food_analysis,
-            "nutritionist_recommendations": nutritionist_advice,
-        }
-
-        # Save to PostgreSQL with nutrition data type
-        await postgres_client.save_nutrition_data(current_user.email, result_data)
         
         # Increment upload count
         await SubscriptionService.increment_upload_count(db, current_user)
 
+        result_data = {
+            "user_email": current_user.email,
+            "files_processed": len(files),
+            "filenames": filenames,
+            "food_analysis": food_analysis,
+        }
+
+        logger.info("Food upload completed successfully", user_id=str(current_user.id), files_processed=len(files))
+        return result_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Food upload failed", user_id=str(current_user.id), error=str(e))
+        raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
+
+
+@app.post("/get_nutritionist_advice/")
+async def get_nutritionist_advice(
+    food_analysis: dict = Body(..., description="Food analysis from upload_food endpoint"),
+    meal_time: str = Body(..., description="Meal time: breakfast, lunch, dinner, snack"),
+    age: int = Body(..., description="User age"),
+    gender: str = Body(..., description="User gender"),
+    medical_report: Optional[str] = Body(None, description="Medical report (optional)"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get nutritionist recommendations based on food analysis and user details.
+    Saves only nutritionist_recommendations + meal_time to database.
+    """
+    logger.info("Nutrition analysis started", user_id=str(current_user.id), meal_time=meal_time)
+    
+    # Check nutrition analysis limits
+    try:
+        limit_check = await SubscriptionService.check_nutrition_limit(db, current_user)
+        logger.info("Nutrition limit check passed", user_id=str(current_user.id), remaining=limit_check.get("remaining_analyses"))
+    except ValueError as e:
+        logger.warning("Nutrition analysis limit exceeded", user_id=str(current_user.id), error=str(e))
+        raise HTTPException(status_code=429, detail=str(e))
+    
+    allowed_meal_times = {"breakfast", "lunch", "dinner", "snack"}
+    
+    if meal_time.lower() not in allowed_meal_times:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid meal time. Allowed: {', '.join(allowed_meal_times)}"
+        )
+    
+    try:
+        # Use provided medical report or default message
+        medical_report_text = medical_report if medical_report else 'No medical report available'
+        
+        # Get nutritionist recommendations
+        nutritionist_advice = await nutritionist_agent(food_analysis, medical_report_text, meal_time)
+        
+        # Prepare data to save (only nutritionist recommendations + meal_time)
+        save_data = {
+            "user_email": current_user.email,
+            "meal_time": meal_time,
+            "age": age,
+            "gender": gender,
+            "nutritionist_recommendations": nutritionist_advice,
+        }
+        
+        # Save to PostgreSQL
+        postgres_client = PostgresClient()
+        await postgres_client.save_nutrition_data(current_user.email, save_data)
+        
+        # Increment nutrition analysis count
+        await SubscriptionService.increment_nutrition_count(db, current_user)
+        
         # Get formatted summary for speech
         formated_summary_for_speech = await summary_agent(nutritionist_advice)
         logger.debug("Summary generated for speech", summary_length=len(formated_summary_for_speech))
         
         # Emit via WebSocket (non-blocking) - send only summary text
         asyncio.create_task(sio.emit('food_analysis_complete', formated_summary_for_speech))
-        # asyncio.create_task(rabbitmq_client.publish_food_event(event_data))
-
-        logger.info("Food upload completed successfully", user_id=str(current_user.id), meal_time=meal_time, files_processed=len(files))
+        
+        result_data = {
+            "user_email": current_user.email,
+            "meal_time": meal_time,
+            "nutritionist_recommendations": nutritionist_advice,
+        }
+        
+        logger.info("Nutrition analysis completed successfully", user_id=str(current_user.id), meal_time=meal_time)
         return result_data
-
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Food upload failed", user_id=str(current_user.id), meal_time=meal_time, error=str(e))
-        raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
+        logger.error("Nutrition analysis failed", user_id=str(current_user.id), meal_time=meal_time, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Error processing nutrition analysis: {str(e)}")
 
 
 @app.delete("/delete_report/{user_id}")
