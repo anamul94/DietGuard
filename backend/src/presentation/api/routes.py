@@ -301,8 +301,43 @@ async def get_nutritionist_advice(
         # Use provided medical report or default message
         medical_report_text = request.medical_report if request.medical_report else 'No medical report available'
         
-        # Get nutritionist recommendations
-        nutritionist_advice = await nutritionist_agent(request.food_analysis, medical_report_text, request.meal_time)
+        # Convert FoodAnalysis Pydantic model to JSON string for the agent
+        import json
+        food_analysis_str = json.dumps(request.food_analysis.model_dump(), indent=2)
+        
+        # Get nutritionist recommendations with user profile data
+        nutritionist_response = await nutritionist_agent(
+            food_analysis=food_analysis_str,
+            medical_report=medical_report_text,
+            meal_time=request.meal_time,
+            gender=request.gender,
+            age=request.age,
+            weight=request.weight,
+            height=request.height
+        )
+        
+        # Check if nutritionist agent failed
+        if not nutritionist_response.success:
+            raise HTTPException(status_code=500, detail=nutritionist_response.error_message)
+        
+        # Extract recommendations and metadata
+        nutritionist_advice = nutritionist_response.data
+        metadata = nutritionist_response.metadata if hasattr(nutritionist_response, 'metadata') else {}
+        
+        # Track token usage
+        if metadata:
+            await TokenUsageService.track_token_usage(
+                db=db,
+                user=current_user,
+                model_name=metadata.get("model_name", "unknown"),
+                agent_type="nutritionist_agent",
+                input_tokens=metadata.get("input_tokens", 0),
+                output_tokens=metadata.get("output_tokens", 0),
+                total_tokens=metadata.get("total_tokens", 0),
+                endpoint="/get_nutritionist_advice/",
+                cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
+                cache_read_tokens=metadata.get("cache_read_tokens", 0)
+            )
         
         # Prepare data to save (only nutritionist recommendations + meal_time)
         save_data = {

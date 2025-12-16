@@ -15,14 +15,16 @@ class AuthService:
     """Service for authentication operations"""
     
     @staticmethod
-    async def register_user(
+    async def signup(
         db: AsyncSession,
         email: str,
         password: str,
         first_name: str,
         last_name: str,
         age: Optional[int] = None,
-        gender: Optional[str] = None
+        gender: Optional[str] = None,
+        weight: Optional[float] = None,
+        height: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Register a new user.
@@ -64,6 +66,8 @@ class AuthService:
             last_name=last_name,
             age=age,
             gender=gender,
+            weight=weight,
+            height=height,
             is_active=True
         )
         db.add(user)
@@ -103,7 +107,11 @@ class AuthService:
                 "first_name": user.first_name,
                 "last_name": user.last_name,
                 "age": user.age,
-                "gender": user.gender
+                "gender": user.gender,
+                "weight": float(user.weight) if user.weight else None,
+                "height": float(user.height) if user.height else None,
+                "is_active": user.is_active,
+                "roles": [ur.role.name for ur in user.user_roles]
             },
             "access_token": access_token,
             "refresh_token": refresh_token,

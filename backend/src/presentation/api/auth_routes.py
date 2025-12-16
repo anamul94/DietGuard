@@ -15,10 +15,12 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 class SignUpRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
-    firstName: str = Field(..., min_length=1, max_length=100)
-    lastName: str = Field(..., min_length=1, max_length=100)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
     age: Optional[int] = Field(None, ge=1, le=150)
-    gender: Optional[str] = Field(None, max_length=20)
+    gender: Optional[str] = Field(None, pattern="^(male|female|other)$")
+    weight: Optional[float] = Field(None, ge=20, le=300, description="Weight in kg")
+    height: Optional[float] = Field(None, ge=50, le=250, description="Height in cm")
 
 class SignInRequest(BaseModel):
     email: EmailStr
@@ -60,14 +62,16 @@ async def signup(
     - **gender**: Optional gender
     """
     try:
-        result = await AuthService.register_user(
+        result = await AuthService.signup(
             db=db,
             email=signup_data.email,
             password=signup_data.password,
-            first_name=signup_data.firstName,
-            last_name=signup_data.lastName,
+            first_name=signup_data.first_name,
+            last_name=signup_data.last_name,
             age=signup_data.age,
-            gender=signup_data.gender
+            gender=signup_data.gender,
+            weight=signup_data.weight,
+            height=signup_data.height
         )
         
         # Log successful registration

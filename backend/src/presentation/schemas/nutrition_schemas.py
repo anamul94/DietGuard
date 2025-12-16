@@ -31,6 +31,18 @@ class NutritionAdviceRequest(BaseModel):
         description="User's gender",
         pattern="^(male|female|other)$"
     )
+    weight: float = Field(
+        ...,
+        description="User's weight in kg",
+        ge=20,
+        le=300
+    )
+    height: float = Field(
+        ...,
+        description="User's height in cm",
+        ge=50,
+        le=250
+    )
     medical_report: Optional[str] = Field(
         None, 
         description="Optional medical report or health conditions. If not provided, nutritionist will give general advice."
@@ -64,6 +76,8 @@ class NutritionAdviceRequest(BaseModel):
                 "meal_time": "breakfast",
                 "age": 25,
                 "gender": "male",
+                "weight": 75.5,
+                "height": 180.0,
                 "medical_report": "No known allergies"
             }
         }

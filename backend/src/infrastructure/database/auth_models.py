@@ -15,6 +15,8 @@ class User(Base):
     last_name = Column(String(100), nullable=False)
     age = Column(Integer, nullable=True)
     gender = Column(String(20), nullable=True)
+    weight = Column(Numeric(5, 2), nullable=True)  # Weight in kg (e.g., 75.50)
+    height = Column(Numeric(5, 2), nullable=True)  # Height in cm (e.g., 175.50)
     is_active = Column(Boolean, default=True, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
