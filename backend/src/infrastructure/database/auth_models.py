@@ -27,6 +27,7 @@ class User(Base):
     upload_limits = relationship("UploadLimit", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
     password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete-orphan")
+    token_usage = relationship("TokenUsage", back_populates="user", cascade="all, delete-orphan")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -108,6 +109,42 @@ class UploadLimit(Base):
     __table_args__ = (
         Index('idx_user_date_unique', 'user_id', 'date', unique=True),
     )
+
+
+class TokenUsage(Base):
+    """Track LLM token usage for analytics and cost monitoring"""
+    __tablename__ = "token_usage"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Model and agent information
+    model_name = Column(String, nullable=False, index=True)
+    agent_type = Column(String, nullable=False, index=True)  # food_agent, nutritionist_agent, etc.
+    endpoint = Column(String, nullable=True)  # API endpoint that triggered this
+    
+    # Token counts
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    
+    # Additional metadata
+    cache_creation_tokens = Column(Integer, nullable=True, default=0)
+    cache_read_tokens = Column(Integer, nullable=True, default=0)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="token_usage")
+    
+    # Indexes for efficient querying
+    __table_args__ = (
+        Index('idx_user_date', 'user_id', 'created_at'),
+        Index('idx_model_date', 'model_name', 'created_at'),
+        Index('idx_agent_date', 'agent_type', 'created_at'),
+    )
+
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

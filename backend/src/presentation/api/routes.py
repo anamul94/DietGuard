@@ -15,6 +15,7 @@ from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User
 from ...infrastructure.auth.dependencies import get_current_active_user
 from ...application.services.subscription_service import SubscriptionService
+from ...application.services.token_usage_service import TokenUsageService
 from sqlalchemy.ext.asyncio import AsyncSession
 # from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 
@@ -224,7 +225,24 @@ async def upload_food(
         if not food_analysis_response.success:
             raise HTTPException(status_code=500, detail=food_analysis_response.error_message)
         
+        # Extract food analysis data and metadata
         food_analysis = food_analysis_response.data
+        metadata = food_analysis_response.metadata if hasattr(food_analysis_response, 'metadata') else {}
+        
+        # Track token usage
+        if metadata:
+            await TokenUsageService.track_token_usage(
+                db=db,
+                user=current_user,
+                model_name=metadata.get("model_name", "unknown"),
+                agent_type="food_agent",
+                input_tokens=metadata.get("input_tokens", 0),
+                output_tokens=metadata.get("output_tokens", 0),
+                total_tokens=metadata.get("total_tokens", 0),
+                endpoint="/upload_food/",
+                cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
+                cache_read_tokens=metadata.get("cache_read_tokens", 0)
+            )
         
         # Increment upload count
         await SubscriptionService.increment_upload_count(db, current_user)

@@ -68,8 +68,8 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
             region_name=aws_region,
             temperature=0.1,
         )
-        # Apply structured output schema
-        structured_llm = llm.with_structured_output(FoodAnalysis)
+        # Apply structured output schema with raw response for metadata
+        structured_llm = llm.with_structured_output(FoodAnalysis, include_raw=True)
     except Exception as e:
         logger.error("Food agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
@@ -117,8 +117,8 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
     }
 
     try:
-        # Invoke with structured output
-        response: FoodAnalysis = await asyncio.to_thread(
+        # Invoke with structured output (returns dict with 'parsed' and 'raw')
+        result = await asyncio.to_thread(
             lambda: structured_llm.invoke(
                 [system_message, message],
                 config={"callbacks": [get_langfuse_handler()]}
@@ -127,17 +127,41 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
         
         # Flush events to Langfuse
         flush_langfuse()
-        print("Food agent completed successfully")
-        print(response) 
+        
+        # Extract parsed data and metadata
+        parsed: FoodAnalysis = result["parsed"]
+        raw = result["raw"]  # AIMessage with metadata
+        meta = raw.response_metadata if hasattr(raw, 'response_metadata') else {}
+        usage = raw.usage_metadata if hasattr(raw, 'usage_metadata') else {}
+        
+        # Print metadata for debugging
+        print("=" * 50)
+        print("FOOD AGENT METADATA")
+        print("=" * 50)
+        print(f"Response Metadata: {meta}")
+        print(f"Usage Metadata: {usage}")
+        print("=" * 50)
+        
         # Convert Pydantic model to dict for AgentResponse
-        structured_data = response.model_dump()
+        structured_data = parsed.model_dump()
+        
+        # Prepare metadata for token tracking
+        metadata = {
+            "model_name": meta.get("model_name", "unknown"),
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "cache_creation_tokens": usage.get("input_token_details", {}).get("cache_creation", 0),
+            "cache_read_tokens": usage.get("input_token_details", {}).get("cache_read", 0),
+        }
         
         logger.info("Food agent completed successfully", 
                    image_count=image_count,
                    food_items_count=len(structured_data.get('food_items', [])),
-                   total_calories=structured_data.get('nutrition', {}).get('calories', 0))
+                   total_calories=structured_data.get('nutrition', {}).get('calories', 0),
+                   token_usage=usage)
         
-        return AgentResponse.success_response(structured_data)
+        return AgentResponse.success_response(structured_data, metadata=metadata)
             
     except Exception as e:
         logger.error("Food agent model invocation failed", 
