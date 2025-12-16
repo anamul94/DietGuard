@@ -1,17 +1,49 @@
 import asyncio
 import os
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from typing import List
 from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
 from .agent_response import AgentResponse
 
 
+# Pydantic models for structured output
+class FoodItem(BaseModel):
+    """Individual food item"""
+    name: str = Field(description="Name of the food item")
+    quantity: str = Field(description="Quantity or serving size (e.g., '8-10 pieces', '1 cup')")
+    preparation: str = Field(description="Preparation method or cooking style (e.g., 'Glazed', 'Boiled')")
+
+
+class NutritionInfo(BaseModel):
+    """Nutritional information"""
+    calories: int = Field(description="Total calories", ge=0)
+    protein: str = Field(description="Protein content with unit (e.g., '45g')")
+    carbohydrates: str = Field(description="Carbohydrate content with unit (e.g., '12g')")
+    fat: str = Field(description="Fat content with unit (e.g., '48g')")
+    fiber: str = Field(description="Fiber content with unit (e.g., '1g')")
+    sugar: str = Field(description="Sugar content with unit (e.g., '8g')")
+
+
+class FoodAnalysis(BaseModel):
+    """Complete food analysis with items and nutrition"""
+    food_items: List[FoodItem] = Field(description="List of all identified food items")
+    nutrition: NutritionInfo = Field(description="Total nutritional information for all food items combined")
+
+
 async def food_agent(data, type: str, mime_type) -> AgentResponse:
     """
-    data: base64-encoded string OR list of base64 strings for multiple images
-    type: "image" OR list of "image" for multiple images
-    mime_type: e.g. "image/jpeg" OR list of mime types for multiple images
+    Analyze food images and return structured nutritional data.
+    
+    Args:
+        data: base64-encoded string OR list of base64 strings for multiple images
+        type: "image" OR list of "image" for multiple images
+        mime_type: e.g. "image/jpeg" OR list of mime types for multiple images
+        
+    Returns:
+        AgentResponse with structured FoodAnalysis data
     """
     image_count = len(data) if isinstance(data, list) else 1
     logger.info("Food agent invoked", image_count=image_count)
@@ -36,40 +68,31 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
             region_name=aws_region,
             temperature=0.1,
         )
+        # Apply structured output schema
+        structured_llm = llm.with_structured_output(FoodAnalysis)
     except Exception as e:
         logger.error("Food agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
     system_message = {
-    "role": "system",
-    "content": (
-        "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
-        "Your task is to professionally identify and analyze food items in images. "
-        "Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements. "
-        "Your analysis must be precise, identifying each food item and estimating its quantity "
-        "(e.g., '2 boiled eggs', '1 cup of rice', 'half an apple'). "
-        "Be objective and concise — do not speculate or include unnecessary commentary. "
-        "Do not mention images, detection, or AI-related processes.\n\n"
-        "Format your response using **markdown tables** exactly as follows:\n\n"
-        "## FOOD IDENTIFICATION\n"
-        "| Food Item | Quantity | Preparation Method |\n"
-        "| --- | --- | --- |\n\n"
-        "## NUTRITIONAL BREAKDOWN\n"
-        "| Nutrient | Amount | % Daily Value |\n"
-        "| --- | --- | --- |\n"
-        "| Calories | | |\n"
-        "| Protein | | |\n"
-        "| Carbohydrates | | |\n"
-        "| Fat | | |\n"
-        "| Fiber | | |\n"
-        "| Sugar | | |\n\n"
-        "Provide only the tables. Do not include summaries, recommendations, or extra commentary."
-    ),
-}
+        "role": "system",
+        "content": (
+            "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
+            "Your task is to professionally identify and analyze food items in images. "
+            "Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements. "
+            "Your analysis must be precise, identifying each food item and estimating its quantity "
+            "(e.g., '2 boiled eggs', '1 cup of rice', 'half an apple'). "
+            "Provide accurate nutritional estimates for the TOTAL meal (sum of all items). "
+            "Be objective and concise — do not speculate or include unnecessary commentary."
+        ),
+    }
 
     # Handle multiple images
     if isinstance(data, list):
-        content = [{"type": "text", "text": "Identify and analyze all food items in these images. Provide analysis for each image and a combined nutritional summary."}]
+        content = [{
+            "type": "text", 
+            "text": "Identify and analyze all food items in these images. Provide a combined analysis with total nutritional values for all items."
+        }]
         for i, (img_data, img_type, img_mime) in enumerate(zip(data, type, mime_type)):
             content.append({
                 "type": img_type,
@@ -79,7 +102,7 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
             })
     else:
         content = [
-            {"type": "text", "text": "Identify and analyze all food items in this image."},
+            {"type": "text", "text": "Identify and analyze all food items in this image. Provide total nutritional values."},
             {
                 "type": type,
                 "source_type": "base64",
@@ -94,18 +117,31 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
     }
 
     try:
-        # run blocking call in a thread-safe way with Langfuse tracing
-        response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+        # Invoke with structured output
+        response: FoodAnalysis = await asyncio.to_thread(
+            lambda: structured_llm.invoke(
+                [system_message, message],
+                config={"callbacks": [get_langfuse_handler()]}
+            )
         )
         
         # Flush events to Langfuse
         flush_langfuse()
-
-        print(response)
+        print("Food agent completed successfully")
+        print(response) 
+        # Convert Pydantic model to dict for AgentResponse
+        structured_data = response.model_dump()
         
-        logger.info("Food agent completed successfully", image_count=image_count)
-        return AgentResponse.success_response(response.text() if hasattr(response, "text") else str(response))
+        logger.info("Food agent completed successfully", 
+                   image_count=image_count,
+                   food_items_count=len(structured_data.get('food_items', [])),
+                   total_calories=structured_data.get('nutrition', {}).get('calories', 0))
+        
+        return AgentResponse.success_response(structured_data)
+            
     except Exception as e:
-        logger.error("Food agent model invocation failed", error=str(e), exception_type=type(e).__name__, image_count=image_count)
-        return AgentResponse.error_response("Unable to analyze food items at this time. Please try again later.") 
+        logger.error("Food agent model invocation failed", 
+                    error=str(e), 
+                    exception_type=type(e).__name__, 
+                    image_count=image_count)
+        return AgentResponse.error_response("Unable to analyze food items at this time. Please try again later.")

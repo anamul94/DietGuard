@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
+from ..schemas import FoodUploadResponse, NutritionAdviceRequest, NutritionAdviceResponse
 import asyncio
 import socketio
 from ...infrastructure.utils.logger import logger
@@ -169,15 +170,19 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 
-@app.post("/upload_food/")
+@app.post("/upload_food/", response_model=FoodUploadResponse)
 async def upload_food(
     files: List[UploadFile] = File(..., description="Food images"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Upload food images and get food analysis.
-    Returns only food_analysis without nutritionist recommendations.
+    Upload food images and get AI-powered food analysis.
+    
+    Returns detailed nutritional breakdown and food identification.
+    Does not include nutritionist recommendations - use /get_nutritionist_advice/ for that.
+    
+    **Limits:** Free users can upload 2 times per day. Paid users have unlimited uploads.
     """
     logger.info("Food upload started", user_id=str(current_user.id), file_count=len(files))
     
@@ -241,20 +246,21 @@ async def upload_food(
         raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
 
 
-@app.post("/get_nutritionist_advice/")
+@app.post("/get_nutritionist_advice/", response_model=NutritionAdviceResponse)
 async def get_nutritionist_advice(
-    food_analysis: dict = Body(..., description="Food analysis from upload_food endpoint"),
-    meal_time: str = Body(..., description="Meal time: breakfast, lunch, dinner, snack"),
-    age: int = Body(..., description="User age"),
-    gender: str = Body(..., description="User gender"),
-    medical_report: Optional[str] = Body(None, description="Medical report (optional)"),
+    request: NutritionAdviceRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get nutritionist recommendations based on food analysis and user details.
-    Saves only nutritionist_recommendations + meal_time to database.
+    Get personalized nutritionist recommendations.
+    
+    Analyzes food based on your age, gender, and optional medical conditions.
+    Saves recommendations to your profile for tracking.
+    
+    **Limits:** Free users can get 2 nutrition analyses per day. Paid users have unlimited analyses.
     """
+    meal_time = request.meal_time
     logger.info("Nutrition analysis started", user_id=str(current_user.id), meal_time=meal_time)
     
     # Check nutrition analysis limits
@@ -275,17 +281,17 @@ async def get_nutritionist_advice(
     
     try:
         # Use provided medical report or default message
-        medical_report_text = medical_report if medical_report else 'No medical report available'
+        medical_report_text = request.medical_report if request.medical_report else 'No medical report available'
         
         # Get nutritionist recommendations
-        nutritionist_advice = await nutritionist_agent(food_analysis, medical_report_text, meal_time)
+        nutritionist_advice = await nutritionist_agent(request.food_analysis, medical_report_text, request.meal_time)
         
         # Prepare data to save (only nutritionist recommendations + meal_time)
         save_data = {
             "user_email": current_user.email,
-            "meal_time": meal_time,
-            "age": age,
-            "gender": gender,
+            "meal_time": request.meal_time,
+            "age": request.age,
+            "gender": request.gender,
             "nutritionist_recommendations": nutritionist_advice,
         }
         
@@ -305,7 +311,7 @@ async def get_nutritionist_advice(
         
         result_data = {
             "user_email": current_user.email,
-            "meal_time": meal_time,
+            "meal_time": request.meal_time,
             "nutritionist_recommendations": nutritionist_advice,
         }
         
