@@ -27,16 +27,59 @@ from .user_routes import router as user_router
 from .payment_routes import router as payment_router
 from .package_routes import router as package_router
 from .admin_routes import router as admin_router
+from .ai_agent_routes import router as ai_agent_router
 
-# Create FastAPI app first
+# Create FastAPI app with enhanced OpenAPI configuration
 app = FastAPI(
-    title="DietGuard API",
-    description="AI-Powered Nutritionist with Authentication",
-    version="1.0.0"
+    title="DietGuard AI API",
+    description="""AI-Powered Nutritionist with Authentication & Subscription Management
+    
+## Features
+- 🔐 JWT Authentication
+- 🤖 AI-Powered Food & Report Analysis
+- 💳 Subscription Management
+- 📊 Usage Tracking
+- 🎯 Personalized Nutrition Advice
+    """,
+    version="2.0.0",
+    openapi_tags=[
+        {
+            "name": "Authentication",
+            "description": "User authentication and authorization endpoints (signup, signin, token refresh)"
+        },
+        {
+            "name": "AI Agents",
+            "description": "AI-powered food analysis, medical report analysis, and nutrition advice"
+        },
+        {
+            "name": "Users",
+            "description": "User profile management and settings"
+        },
+        {
+            "name": "Packages",
+            "description": "Subscription package management (Free, Monthly, Yearly)"
+        },
+        {
+            "name": "Payments",
+            "description": "Payment processing and subscription upgrades"
+        },
+        {
+            "name": "Admin",
+            "description": "Administrative operations (user management, statistics)"
+        }
+    ],
+    contact={
+        "name": "DietGuard Support",
+        "email": "support@dietguard.ai"
+    },
+    license_info={
+        "name": "MIT",
+    }
 )
 
 # Include routers
 app.include_router(auth_router, prefix="/api/v1/auth")
+app.include_router(ai_agent_router, prefix="/api/v1/ai")
 app.include_router(user_router, prefix="/api/v1/users")
 app.include_router(payment_router, prefix="/api/v1/payment")
 app.include_router(package_router, prefix="/api/v1")

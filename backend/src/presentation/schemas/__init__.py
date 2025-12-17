@@ -17,6 +17,14 @@ from .nutrition_schemas import (
     NutritionAdviceResponse,
 )
 
+from .ai_schemas import (
+    FoodUploadRequest,
+    FoodAnalysisResponse,
+    ReportUploadResponse,
+    ErrorResponse,
+    SubscriptionLimitError,
+)
+
 __all__ = [
     # Food schemas
     "FoodItem",
@@ -26,4 +34,10 @@ __all__ = [
     # Nutrition schemas
     "NutritionAdviceRequest",
     "NutritionAdviceResponse",
+    # AI Agent schemas
+    "FoodUploadRequest",
+    "FoodAnalysisResponse",
+    "ReportUploadResponse",
+    "ErrorResponse",
+    "SubscriptionLimitError",
 ]
