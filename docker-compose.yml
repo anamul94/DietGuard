@@ -4,12 +4,12 @@ services:
     image: postgres:15-alpine
     container_name: dietguard-postgres
     environment:
-      POSTGRES_DB: dietguard_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: dietguard
+      POSTGRES_USER: dietguard
+      POSTGRES_PASSWORD: dietguard123
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5437:5437"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -9,13 +9,14 @@ class Base(DeclarativeBase):
     pass
 
 # Database configuration
-DATABASE_URL = (
+# Use DATABASE_URL if provided, otherwise construct from individual variables
+DATABASE_URL = os.getenv('DATABASE_URL') or (
     f"postgresql+asyncpg://"
-    f"{os.getenv('POSTGRES_USER', 'dietguard')}:"
-    f"{os.getenv('POSTGRES_PASSWORD', 'password')}@"
+    f"{os.getenv('POSTGRES_USER', 'postgres')}:"
+    f"{os.getenv('POSTGRES_PASSWORD', 'postgres123')}@"
     f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
     f"{os.getenv('POSTGRES_PORT', '5432')}/"
-    f"{os.getenv('POSTGRES_DB', 'dietguard')}"
+    f"{os.getenv('POSTGRES_DB', 'dietguard_db')}"
 )
 
 # Create async engine

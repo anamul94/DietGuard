@@ -103,7 +103,7 @@ async def signup(
         await AuditService.log_auth_event(
             db=db,
             action="signup_failed",
-            email=signup_data.email,
+            email=user_data.email,
             success=False,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent")
