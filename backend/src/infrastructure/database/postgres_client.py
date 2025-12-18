@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from .database import AsyncSessionLocal
@@ -10,19 +11,18 @@ class PostgresClient:
     def __init__(self):
         pass
     
-    async def save_report_data(self, user_id: str, data: dict, expiration_hours: int = 24):
+    async def save_report_data(self, user_id: str, data: dict):
         try:
-            logger.info("Saving report data", user_id=user_id, expiration_hours=expiration_hours)
+            logger.info("Saving report data", user_id=user_id)
             async with AsyncSessionLocal() as session:
                 # Delete existing data for user
                 await session.execute(delete(ReportData).where(ReportData.user_id == user_id))
                 
-                # Create new record
-                expires_at = datetime.now(timezone.utc) + timedelta(hours=expiration_hours)
+                # Create new record (no expiration)
                 report = ReportData(
                     user_id=user_id,
                     data=json.dumps(data),
-                    expires_at=expires_at
+                    expires_at=None
                 )
                 session.add(report)
                 await session.commit()
@@ -35,40 +35,30 @@ class PostgresClient:
         try:
             logger.debug("Retrieving report data", user_id=user_id)
             async with AsyncSessionLocal() as session:
-                # Clean expired records
-                deleted_count = await session.execute(delete(ReportData).where(ReportData.expires_at < datetime.now(timezone.utc)))
-                if deleted_count.rowcount > 0:
-                    logger.debug("Cleaned expired report records", count=deleted_count.rowcount)
-                await session.commit()
-                
-                # Get data
+                # Get data (no expiration check)
                 result = await session.execute(
                     select(ReportData).where(ReportData.user_id == user_id)
                 )
                 report = result.scalar_one_or_none()
                 
-                if report and report.expires_at > datetime.now(timezone.utc):
+                if report:
                     logger.info("Report data retrieved successfully", user_id=user_id)
                     return {"data": json.loads(report.data)}
-                logger.debug("No report data found or data expired", user_id=user_id)
+                logger.debug("No report data found", user_id=user_id)
                 return None
         except Exception as e:
             logger.error("Failed to retrieve report data", user_id=user_id, error=str(e), exception_type=type(e).__name__)
             raise
     
-    async def save_nutrition_data(self, user_id: str, data: dict, expiration_hours: int = 24):
+    async def save_nutrition_data(self, user_id: str, data: dict):
         try:
-            logger.info("Saving nutrition data", user_id=user_id, expiration_hours=expiration_hours)
+            logger.info("Saving nutrition data", user_id=user_id)
             async with AsyncSessionLocal() as session:
-                # Delete existing data for user
-                await session.execute(delete(NutritionData).where(NutritionData.user_id == user_id))
-                
-                # Create new record
-                expires_at = datetime.now(timezone.utc) + timedelta(hours=expiration_hours)
+                # Create new record (append, don't delete existing)
                 nutrition = NutritionData(
                     user_id=user_id,
                     data=json.dumps(data),
-                    expires_at=expires_at
+                    expires_at=None
                 )
                 session.add(nutrition)
                 await session.commit()
@@ -81,25 +71,108 @@ class PostgresClient:
         try:
             logger.debug("Retrieving nutrition data", user_id=user_id)
             async with AsyncSessionLocal() as session:
-                # Clean expired records
-                deleted_count = await session.execute(delete(NutritionData).where(NutritionData.expires_at < datetime.now(timezone.utc)))
-                if deleted_count.rowcount > 0:
-                    logger.debug("Cleaned expired nutrition records", count=deleted_count.rowcount)
-                await session.commit()
-                
-                # Get data
+                # Get data (no expiration check)
                 result = await session.execute(
                     select(NutritionData).where(NutritionData.user_id == user_id)
                 )
                 nutrition = result.scalar_one_or_none()
                 
-                if nutrition and nutrition.expires_at > datetime.now(timezone.utc):
+                if nutrition:
                     logger.info("Nutrition data retrieved successfully", user_id=user_id)
                     return {"data": json.loads(nutrition.data)}
-                logger.debug("No nutrition data found or data expired", user_id=user_id)
+                logger.debug("No nutrition data found", user_id=user_id)
                 return None
         except Exception as e:
             logger.error("Failed to retrieve nutrition data", user_id=user_id, error=str(e), exception_type=type(e).__name__)
+            raise
+    
+    async def get_nutrition_data_paginated(
+        self, 
+        user_id: str, 
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        page: int = 1,
+        page_size: int = 10
+    ):
+        """
+        Get paginated nutrition data with optional date filtering.
+        
+        Args:
+            user_id: User ID to filter by
+            start_date: Optional start date for filtering (inclusive)
+            end_date: Optional end date for filtering (inclusive)
+            page: Page number (1-indexed)
+            page_size: Number of items per page
+            
+        Returns:
+            Dict with items, total_count, page, page_size, total_pages
+        """
+        try:
+            logger.debug("Retrieving paginated nutrition data", 
+                        user_id=user_id, 
+                        start_date=start_date, 
+                        end_date=end_date,
+                        page=page,
+                        page_size=page_size)
+            
+            async with AsyncSessionLocal() as session:
+                # Build base query
+                query = select(NutritionData).where(NutritionData.user_id == user_id)
+                
+                # Add date filters if provided
+                if start_date:
+                    query = query.where(NutritionData.created_at >= start_date)
+                if end_date:
+                    query = query.where(NutritionData.created_at <= end_date)
+                
+                # Order by created_at descending (newest first)
+                query = query.order_by(NutritionData.created_at.desc())
+                
+                # Get total count
+                from sqlalchemy import func as sql_func
+                count_query = select(sql_func.count()).select_from(query.subquery())
+                total_count_result = await session.execute(count_query)
+                total_count = total_count_result.scalar()
+                
+                # Calculate pagination
+                offset = (page - 1) * page_size
+                total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+                
+                # Apply pagination
+                query = query.offset(offset).limit(page_size)
+                
+                # Execute query
+                result = await session.execute(query)
+                nutrition_records = result.scalars().all()
+                
+                # Parse and format results
+                items = []
+                for record in nutrition_records:
+                    items.append({
+                        "id": record.id,
+                        "created_at": record.created_at.isoformat(),
+                        "data": json.loads(record.data)
+                    })
+                
+                logger.info("Paginated nutrition data retrieved successfully", 
+                           user_id=user_id, 
+                           total_count=total_count,
+                           page=page,
+                           items_returned=len(items))
+                
+                return {
+                    "items": items,
+                    "total_count": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": total_pages
+                }
+                
+        except Exception as e:
+            logger.error("Failed to retrieve paginated nutrition data", 
+                        user_id=user_id, 
+                        error=str(e), 
+                        exception_type=type(e).__name__)
             raise
     
     async def delete_report_data(self, user_id: str):

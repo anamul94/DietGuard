@@ -513,9 +513,9 @@ async def upload_report(
             "combined_response": combined_response
         }
 
-        # Save to PostgreSQL with 12 hours expiration
+        # Save to PostgreSQL (no expiration)
         postgres_client = PostgresClient()
-        await postgres_client.save_report_data(current_user.email, result_data, expiration_hours=12)
+        await postgres_client.save_report_data(current_user.email, result_data)
         
         logger.info("Report upload completed successfully", user_id=str(current_user.id), files_processed=len(files))
         return result_data

@@ -5,9 +5,9 @@ This module contains API endpoints for AI-powered food and medical report analys
 All endpoints require authentication and enforce subscription limits.
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status, Query
 from fastapi.responses import JSONResponse
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.food_schemas import FoodUploadResponse, FoodAnalysis
@@ -409,8 +409,7 @@ async def get_nutrition_advice(
                 "food_analysis": food_analysis_data,
                 "meal_type": request.meal_type,
                 "timestamp": datetime.now(timezone.utc).isoformat()
-            },
-            expiration_hours=24
+            }
         )
         logger.info("Food analysis saved to database", user_id=str(current_user.id))
         
@@ -645,3 +644,181 @@ async def delete_report_data_legacy(user_id: str):
     
     logger.info("Report data deleted successfully", user_id=user_id)
     return {"message": f"Report data deleted for user: {user_id}"}
+
+
+@router.get(
+    "/nutrition-data",
+    summary="Get Nutrition Data with Pagination",
+    description="""
+    Retrieve nutrition analysis history with pagination and date filtering.
+    
+    **Authentication Required:** Yes (JWT Bearer token)
+    
+    **Query Parameters:**
+    - `start_date`: Filter records from this date (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)
+    - `end_date`: Filter records until this date (ISO format)
+    - `page`: Page number (default: 1)
+    - `page_size`: Items per page (default: 10, max: 100)
+    
+    **Returns:**
+    - Paginated list of nutrition analyses
+    - Total count and page information
+    - Records sorted by newest first
+    """,
+    responses={
+        200: {
+            "description": "Successfully retrieved nutrition data"
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing JWT token"
+        }
+    }
+)
+async def get_nutrition_data_paginated(
+    start_date: Optional[str] = Query(None, description="Start date filter (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date filter (ISO format)"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page (max 100)"),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get paginated nutrition data for the authenticated user.
+    
+    Supports date filtering and pagination for efficient data retrieval.
+    """
+    try:
+        from datetime import datetime
+        
+        # Validate and parse dates
+        start_datetime = None
+        end_datetime = None
+        
+        if start_date:
+            try:
+                start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)"
+                )
+        
+        if end_date:
+            try:
+                end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)"
+                )
+        
+        logger.info("Fetching paginated nutrition data", 
+                   user_id=str(current_user.id),
+                   start_date=start_date,
+                   end_date=end_date,
+                   page=page,
+                   page_size=page_size)
+        
+        # Get paginated data
+        postgres_client = PostgresClient()
+        result = await postgres_client.get_nutrition_data_paginated(
+            user_id=str(current_user.id),
+            start_date=start_datetime,
+            end_date=end_datetime,
+            page=page,
+            page_size=page_size
+        )
+        
+        logger.info("Nutrition data retrieved successfully",
+                   user_id=str(current_user.id),
+                   total_count=result["total_count"],
+                   items_returned=len(result["items"]))
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to retrieve nutrition data",
+                    user_id=str(current_user.id),
+                    error=str(e),
+                    exception_type=type(e).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve nutrition data. Please try again later."
+        )
+
+
+@router.get(
+    "/nutrition-data/today",
+    summary="Get Today's Nutrition Data",
+    description="""
+    Retrieve all nutrition analyses from today for the authenticated user.
+    
+    **Authentication Required:** Yes (JWT Bearer token)
+    
+    **Returns:**
+    - List of all nutrition analyses from today
+    - Sorted by newest first
+    - Automatically filters by current date (00:00 to 23:59)
+    """,
+    responses={
+        200: {
+            "description": "Successfully retrieved today's nutrition data"
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing JWT token"
+        }
+    }
+)
+async def get_todays_nutrition_data(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get all nutrition data from today for the authenticated user.
+    
+    Automatically filters by today's date in the user's timezone.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        
+        # Get today's date range (UTC)
+        now_utc = datetime.now(timezone.utc)
+        start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = now_utc.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        logger.info("Fetching today's nutrition data", 
+                   user_id=str(current_user.id),
+                   start_of_day=start_of_day.isoformat(),
+                   end_of_day=end_of_day.isoformat())
+        
+        # Get all data from today (no pagination limit)
+        postgres_client = PostgresClient()
+        result = await postgres_client.get_nutrition_data_paginated(
+            user_id=str(current_user.id),
+            start_date=start_of_day,
+            end_date=end_of_day,
+            page=1,
+            page_size=100  # Get up to 100 entries from today
+        )
+        
+        logger.info("Today's nutrition data retrieved successfully",
+                   user_id=str(current_user.id),
+                   total_count=result["total_count"],
+                   items_returned=len(result["items"]))
+        
+        # Return just the items array for simpler response
+        return {
+            "date": now_utc.date().isoformat(),
+            "total_count": result["total_count"],
+            "items": result["items"]
+        }
+        
+    except Exception as e:
+        logger.error("Failed to retrieve today's nutrition data",
+                    user_id=str(current_user.id),
+                    error=str(e),
+                    exception_type=type(e).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve today's nutrition data. Please try again later."
+        )
