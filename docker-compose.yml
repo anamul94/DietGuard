@@ -9,11 +9,11 @@ services:
       POSTGRES_PASSWORD: dietguard123
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5437:5437"
+      - "5437:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U dietguard"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,7 +30,7 @@ services:
     ports:
       - "8011:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres123@postgres:5432/dietguard_db
+      - DATABASE_URL=postgresql+asyncpg://dietguard:dietguard123@postgres:5432/dietguard
     env_file:
       - ./backend/.env
     depends_on:
