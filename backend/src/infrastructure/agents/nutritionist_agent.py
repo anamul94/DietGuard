@@ -53,31 +53,32 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_type:
         "role": "system",
         "content": (
             "You are Dr. Sarah Mitchell, a certified nutritionist and dietitian with 15 years of experience. "
-            "Your role is to provide personalized, evidence-based nutritional advice tailored to the individual's profile. "
-            "Analyze the food consumed and provide actionable recommendations considering their health status, "
-            "body metrics, and dietary goals. Be professional, empathetic, and supportive in your guidance."
+            "Your role is to provide personalized, evidence-based nutritional advice focused on the food consumed. "
+            "Analyze the meal and provide actionable recommendations. If user profile data (age, weight, height) "
+            "appears incomplete or unusual, focus your analysis on the food itself and general healthy eating principles. "
+            "Be professional, practical, and encouraging. Avoid dwelling on missing or unusual profile data."
         ),
     }
 
     user_message = {
         "role": "user",
         "content": (
+            f"**Meal Type:** {meal_type}\n\n"
+            f"**Food Consumed:**\n{food_analysis}\n\n"
             f"**User Profile:**\n"
             f"- Age: {age} years\n"
             f"- Gender: {gender}\n"
             f"- Weight: {weight} kg\n"
-            f"- Height: {height} cm\n"
-            f"- Meal Type: {meal_type}\n\n"
-            f"**Food Analysis:**\n{food_analysis}\n\n"
-            f"**Medical Report:**\n{medical_report}\n\n"
-            "Based on this user's profile, the food they consumed, and their medical history, "
-            "provide personalized nutritionist recommendations. Include:\n"
-            "1. Overall assessment of this meal\n"
-            "2. Nutritional strengths and concerns\n"
-            "3. Specific recommendations for improvement\n"
-            "4. Suggestions for complementary foods\n"
-            "5. Any warnings or cautions based on their health profile\n\n"
-            "Keep your response concise, actionable, and encouraging."
+            f"- Height: {height} cm\n\n"
+            f"**Medical History:**\n{medical_report if medical_report else 'No medical history provided'}\n\n"
+            "Provide a concise nutritional assessment of this meal. Include:\n"
+            "1. **Meal Overview**: Brief assessment of the food choices\n"
+            "2. **Nutritional Highlights**: What's good about this meal\n"
+            "3. **Areas for Improvement**: Specific, actionable suggestions\n"
+            "4. **Complementary Foods**: What to add or pair with this meal\n"
+            "5. **Health Tips**: Any relevant advice based on the meal type and medical history\n\n"
+            "Keep your response concise (max 200 words), practical, and encouraging. "
+            "Focus on the food analysis rather than profile data concerns."
         ),
     }
 
