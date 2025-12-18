@@ -48,23 +48,16 @@ class NutritionInfo(BaseModel):
 
 class FoodAnalysis(BaseModel):
     """Structured model for food analysis"""
-    food_items: List[FoodItem] = Field(..., description="List of identified food items")
+    fooditems: List[str] = Field(..., description="List of identified food items with detailed descriptions including ingredients and preparation methods")
     nutrition: NutritionInfo = Field(..., description="Aggregated nutritional information")
     
     class Config:
         json_schema_extra = {
             "example": {
-                "food_items": [
-                    {
-                        "name": "Chicken wings",
-                        "quantity": "8-10 pieces",
-                        "preparation": "Glazed/caramelized"
-                    },
-                    {
-                        "name": "Green onions",
-                        "quantity": "2 tablespoons",
-                        "preparation": "Chopped, garnish"
-                    }
+                "fooditems": [
+                    "pizza with cheese and tomato",
+                    "grilled chicken with naan roti",
+                    "caesar salad with croutons and parmesan"
                 ],
                 "nutrition": {
                     "calories": 650,
@@ -92,12 +85,9 @@ class FoodUploadResponse(BaseModel):
                 "files_processed": 1,
                 "filenames": ["food_image.jpg"],
                 "food_analysis": {
-                    "food_items": [
-                        {
-                            "name": "Chicken wings",
-                            "quantity": "8-10 pieces",
-                            "preparation": "Glazed/caramelized"
-                        }
+                    "fooditems": [
+                        "pizza with cheese and tomato",
+                        "grilled chicken with naan roti"
                     ],
                     "nutrition": {
                         "calories": 650,

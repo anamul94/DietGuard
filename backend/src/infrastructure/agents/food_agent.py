@@ -10,16 +10,9 @@ from .agent_response import AgentResponse
 
 
 # Pydantic models for structured output
-class FoodItem(BaseModel):
-    """Individual food item"""
-    name: str = Field(description="Name of the food item")
-    quantity: str = Field(description="Quantity or serving size (e.g., '8-10 pieces', '1 cup')")
-    preparation: str = Field(description="Preparation method or cooking style (e.g., 'Glazed', 'Boiled')")
-
-
 class NutritionInfo(BaseModel):
     """Nutritional information"""
-    calories: int = Field(description="Total calories", ge=0)
+    calories: int = Field(description="Total calories as integer", ge=0)
     protein: str = Field(description="Protein content with unit (e.g., '45g')")
     carbohydrates: str = Field(description="Carbohydrate content with unit (e.g., '12g')")
     fat: str = Field(description="Fat content with unit (e.g., '48g')")
@@ -29,11 +22,17 @@ class NutritionInfo(BaseModel):
 
 class FoodAnalysis(BaseModel):
     """Complete food analysis with items and nutrition"""
-    food_items: List[FoodItem] = Field(description="List of all identified food items")
+    fooditems: List[str] = Field(
+        description=(
+            "List of all identified food items with detailed descriptions including visible ingredients and preparation methods. "
+            "Examples: 'pizza with cheese and tomato', 'grilled chicken with naan roti', 'caesar salad with croutons and parmesan', "
+            "'fried rice with vegetables and egg', 'chocolate cake with cream frosting'"
+        )
+    )
     nutrition: NutritionInfo = Field(description="Total nutritional information for all food items combined")
 
 
-async def food_agent(data, type: str, mime_type) -> AgentResponse:
+async def food_agent(data, type, mime_type):
     """
     Analyze food images and return structured nutritional data.
     
@@ -78,12 +77,18 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
         "role": "system",
         "content": (
             "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
-            "Your task is to professionally identify and analyze food items in images. "
-            "Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements. "
-            "Your analysis must be precise, identifying each food item and estimating its quantity "
-            "(e.g., '2 boiled eggs', '1 cup of rice', 'half an apple'). "
-            "Provide accurate nutritional estimates for the TOTAL meal (sum of all items). "
-            "Be objective and concise — do not speculate or include unnecessary commentary."
+            "Your task is to professionally identify and analyze ALL food items in images with detailed descriptions. "
+            "\n\nIMPORTANT INSTRUCTIONS:"
+            "\n1. Identify EVERY food item visible in the image(s)"
+            "\n2. For each food item, provide a DETAILED description that includes:"
+            "\n   - The main food item name"
+            "\n   - Visible ingredients, toppings, or components"
+            "\n   - Preparation method if identifiable (grilled, fried, boiled, baked, etc.)"
+            "\n   - Examples: 'pizza with cheese and tomato', 'grilled chicken with naan roti', "
+            "'caesar salad with croutons and parmesan cheese', 'fried rice with vegetables and egg'"
+            "\n3. Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements"
+            "\n4. Provide accurate nutritional estimates for the TOTAL meal (sum of all items)"
+            "\n5. Be objective and precise — do not speculate or include unnecessary commentary"
         ),
     }
 
@@ -157,7 +162,7 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
         
         logger.info("Food agent completed successfully", 
                    image_count=image_count,
-                   food_items_count=len(structured_data.get('food_items', [])),
+                   food_items_count=len(structured_data.get('fooditems', [])),
                    total_calories=structured_data.get('nutrition', {}).get('calories', 0),
                    token_usage=usage)
         
