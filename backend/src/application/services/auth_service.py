@@ -20,7 +20,7 @@ class AuthService:
         password: str,
         first_name: str,
         last_name: str,
-        age: Optional[int] = None,
+        date_of_birth: Optional[datetime] = None,
         gender: Optional[str] = None,
         weight: Optional[float] = None,
         height: Optional[float] = None
@@ -34,7 +34,7 @@ class AuthService:
             password: Plain text password
             first_name: User first name
             last_name: User last name
-            age: User age (optional)
+            date_of_birth: User date of birth (optional)
             gender: User gender (optional)
             
         Returns:
@@ -63,7 +63,7 @@ class AuthService:
             password_hash=password_hash,
             first_name=first_name,
             last_name=last_name,
-            age=age,
+            date_of_birth=date_of_birth,
             gender=gender,
             weight=weight,
             height=height,
@@ -154,7 +154,7 @@ class AuthService:
                 "email": user.email,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
-                "age": user.age,
+                "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
                 "gender": user.gender,
                 "weight": float(user.weight) if user.weight else None,
                 "height": float(user.height) if user.height else None,
@@ -247,7 +247,7 @@ class AuthService:
                 "email": user.email,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
-                "age": user.age,
+                "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
                 "gender": user.gender,
                 "weight": float(user.weight) if user.weight else None,
                 "height": float(user.height) if user.height else None,

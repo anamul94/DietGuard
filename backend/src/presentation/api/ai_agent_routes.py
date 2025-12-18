@@ -354,13 +354,15 @@ async def get_nutrition_advice(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get AI-powered nutrition advice based on user query.
+    Get AI-powered nutrition advice based on food analysis and user profile.
     
     Requires authentication and enforces daily query limits based on subscription.
+    User profile data (age, gender, weight, height) and medical report are fetched automatically.
+    Food analysis is saved to database for future reference.
     """
     try:
         logger.info(f"Nutrition advice request from user {current_user.id}", 
-                   query_length=len(request.query))
+                   meal_type=request.meal_type)
         
         # Check subscription limits for nutrition queries
         try:
@@ -370,32 +372,67 @@ async def get_nutrition_advice(
             logger.warning("Nutrition query limit exceeded", user_id=str(current_user.id), error=str(e))
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
         
-        # Get nutrition advice from AI
-        logger.info("Calling nutritionist agent")
+        # Import date utility
+        from ...infrastructure.utils.date_utils import calculate_age
+        from datetime import datetime, timezone
+        import json
         
-        # Build context with user profile
-        user_context = f"""
-User Profile:
-- Age: {current_user.age if current_user.age else 'Not specified'}
-- Gender: {current_user.gender if current_user.gender else 'Not specified'}
-- Weight: {current_user.weight if current_user.weight else 'Not specified'} kg
-- Height: {current_user.height if current_user.height else 'Not specified'} cm
-
-User Question: {request.query}
-"""
+        # Calculate age from date of birth
+        age = calculate_age(current_user.date_of_birth)
+        if age is None:
+            logger.warning("User has no date of birth", user_id=str(current_user.id))
+            age = 0  # Default age if not provided
         
-        if request.context:
-            user_context += f"\nAdditional Context: {request.context}"
+        # Get user profile data
+        gender = current_user.gender or "not specified"
+        weight = float(current_user.weight) if current_user.weight else None
+        height = float(current_user.height) if current_user.height else None
         
-        # Call nutritionist agent
+        # Check for medical report
+        postgres_client = PostgresClient()
+        report_data = await postgres_client.get_report_data(str(current_user.id))
+        medical_report = ""
+        
+        if report_data:
+            # Extract medical report summary from stored data
+            data = report_data.get("data", {})
+            medical_report = data.get("combined_summary", "")
+            logger.info("Medical report found for user", user_id=str(current_user.id))
+        else:
+            logger.info("No medical report found for user", user_id=str(current_user.id))
+        
+        # Save food_analysis to database
+        food_analysis_data = request.food_analysis.model_dump()
+        await postgres_client.save_nutrition_data(
+            user_id=str(current_user.id),
+            data={
+                "food_analysis": food_analysis_data,
+                "meal_type": request.meal_type,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            expiration_hours=24
+        )
+        logger.info("Food analysis saved to database", user_id=str(current_user.id))
+        
+        # Extract only fooditems for nutritionist agent
+        fooditems = food_analysis_data.get("fooditems", [])
+        fooditems_str = ", ".join(fooditems) if fooditems else "No food items identified"
+        
+        logger.info("Calling nutritionist agent", 
+                   age=age, 
+                   gender=gender, 
+                   has_medical_report=bool(medical_report),
+                   fooditems_count=len(fooditems))
+        
+        # Call nutritionist agent with only fooditems
         nutritionist_response = await nutritionist_agent(
-            food_analysis="",
-            medical_report="",
-            meal_type="general",
-            gender=current_user.gender,
-            age=current_user.age,
-            weight=float(current_user.weight) if current_user.weight else None,
-            height=float(current_user.height) if current_user.height else None
+            food_analysis=fooditems_str,
+            medical_report=medical_report,
+            meal_type=request.meal_type,
+            gender=gender,
+            age=age,
+            weight=weight,
+            height=height
         )
         
         # Check if nutritionist agent failed
@@ -428,7 +465,7 @@ User Question: {request.query}
         
         return NutritionAdviceResponse(
             user_email=current_user.email,
-            meal_type="general",
+            meal_type=request.meal_type,
             nutritionist_recommendations=nutritionist_advice
         )
         

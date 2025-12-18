@@ -14,7 +14,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    age = Column(Integer, nullable=True)
+    date_of_birth = Column(DateTime(timezone=True), nullable=True)  # Date of birth for age calculation
     gender = Column(String(20), nullable=True)
     weight = Column(Numeric(5, 2), nullable=True)  # Weight in kg (e.g., 75.50)
     height = Column(Numeric(5, 2), nullable=True)  # Height in cm (e.g., 175.50)

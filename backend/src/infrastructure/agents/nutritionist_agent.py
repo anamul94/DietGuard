@@ -48,9 +48,6 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_type:
         logger.error("Nutritionist agent LLM initialization failed", error=str(e))
         raise ValueError("Nutritionist service is temporarily unavailable. Please try again later.")
 
-    # Calculate BMI
-    height_m = height / 100  # Convert cm to meters
-    bmi = weight / (height_m ** 2) if height_m > 0 else 0
     
     system_message = {
         "role": "system",
@@ -70,7 +67,6 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_type:
             f"- Gender: {gender}\n"
             f"- Weight: {weight} kg\n"
             f"- Height: {height} cm\n"
-            f"- BMI: {bmi:.1f}\n"
             f"- Meal Type: {meal_type}\n\n"
             f"**Food Analysis:**\n{food_analysis}\n\n"
             f"**Medical Report:**\n{medical_report}\n\n"

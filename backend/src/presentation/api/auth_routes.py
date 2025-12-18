@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
+from datetime import datetime
 
 from ...infrastructure.database.database import get_db
 from ...application.services.auth_service import AuthService
 from ...application.services.audit_service import AuditService
 from ...infrastructure.auth.jwt import verify_token, create_access_token
 from ...infrastructure.utils.logger import logger
+from ...infrastructure.utils.date_utils import validate_date_of_birth
 
 router = APIRouter(tags=["Authentication"])
 
@@ -17,10 +19,17 @@ class SignUpRequest(BaseModel):
     password: str = Field(..., min_length=6)
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    age: Optional[int] = Field(None, ge=1, le=150)
+    date_of_birth: Optional[datetime] = Field(None, description="Date of birth in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)")
     gender: Optional[str] = Field(None, pattern="^(male|female|other)$")
     weight: Optional[float] = Field(None, ge=20, le=300, description="Weight in kg")
     height: Optional[float] = Field(None, ge=50, le=250, description="Height in cm")
+    
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_dob(cls, v):
+        if v and not validate_date_of_birth(v, min_age=13):
+            raise ValueError('Invalid date of birth. User must be at least 13 years old.')
+        return v
 
 class SignInRequest(BaseModel):
     email: EmailStr
@@ -70,7 +79,7 @@ async def signup(
             password=user_data.password,
             first_name=user_data.first_name,
             last_name=user_data.last_name,
-            age=user_data.age,
+            date_of_birth=user_data.date_of_birth,
             gender=user_data.gender,
             weight=user_data.weight,
             height=user_data.height
