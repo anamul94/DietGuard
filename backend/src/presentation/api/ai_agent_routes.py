@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.food_schemas import FoodUploadResponse, FoodAnalysis
 from ..schemas.nutrition_schemas import NutritionAdviceRequest, NutritionAdviceResponse
 from ..schemas.ai_schemas import ReportUploadResponse, ErrorResponse, SubscriptionLimitError
+from ..schemas.nutrition_calculator_schemas import NutritionCalculationRequest, NutritionCalculationResponse
 from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User
 from ...infrastructure.auth.dependencies import get_current_active_user
@@ -24,6 +25,7 @@ from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.summary_agent import summary_agent
+from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
 from ...infrastructure.database.postgres_client import PostgresClient
 
 router = APIRouter(tags=["AI Agents"])
@@ -417,13 +419,17 @@ async def get_nutrition_advice(
         fooditems = food_analysis_data.get("fooditems", [])
         fooditems_str = ", ".join(fooditems) if fooditems else "No food items identified"
         
+        # Extract nutrition values to pass to nutritionist agent
+        nutrition_values = food_analysis_data.get("nutrition", {})
+        
         logger.info("Calling nutritionist agent", 
                    age=age, 
                    gender=gender, 
                    has_medical_report=bool(medical_report),
-                   fooditems_count=len(fooditems))
+                   fooditems_count=len(fooditems),
+                   has_nutrition=bool(nutrition_values))
         
-        # Call nutritionist agent with only fooditems
+        # Call nutritionist agent with fooditems and nutrition values
         nutritionist_response = await nutritionist_agent(
             food_analysis=fooditems_str,
             medical_report=medical_report,
@@ -431,7 +437,8 @@ async def get_nutrition_advice(
             gender=gender,
             age=age,
             weight=weight,
-            height=height
+            height=height,
+            nutrition_values=nutrition_values if nutrition_values else None
         )
         
         # Check if nutritionist agent failed
@@ -476,6 +483,142 @@ async def get_nutrition_advice(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate nutrition advice. Please try again later."
+        )
+
+
+@router.post(
+    "/calculate-nutrition",
+    response_model=NutritionCalculationResponse,
+    summary="Calculate Nutrition from Food Items",
+    description="""
+    Calculate clinically accurate nutrition values for given food items.
+    
+    **Authentication Required:** Yes (JWT Bearer token)
+    
+    **Use Case:**
+    This endpoint is designed for when users correct AI-identified foods from the `/upload-food` endpoint.
+    Users can provide corrected food item names with quantities to get updated nutrition values.
+    
+    **Input Format:**
+    - Provide food items with quantities (e.g., "1 grilled chicken with naan roti")
+    - The agent will parse quantities and calculate nutrition accordingly
+    - If no quantity is specified, standard serving sizes are used
+    
+    **Examples:**
+    - "1 grilled chicken with naan roti"
+    - "2 slices pizza with cheese and tomato"
+    - "150g brown rice with vegetables"
+    
+    **Returns:**
+    - fooditems (echoed back)
+    - nutrition object with clinically accurate values
+    
+    **Note:** This endpoint tracks usage but does not count against daily limits.
+    """,
+    responses={
+        200: {
+            "description": "Successful nutrition calculation",
+            "model": NutritionCalculationResponse
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing JWT token",
+            "model": ErrorResponse
+        }
+    }
+)
+async def calculate_nutrition(
+    request: NutritionCalculationRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Calculate nutrition values for given food items.
+    
+    Accepts food item names with quantities and returns clinically accurate nutrition data.
+    Updates previously saved nutrition data if it was saved from food upload (not from nutrition advice).
+    """
+    try:
+        logger.info(f"Nutrition calculation request from user {current_user.id}", 
+                   item_count=len(request.fooditems))
+        
+        # Call nutrition calculator agent
+        nutrition_response = await nutrition_calculator_agent(request.fooditems)
+        
+        # Check if agent failed
+        if not nutrition_response.success:
+            raise HTTPException(status_code=500, detail=nutrition_response.error_message)
+        
+        # Extract nutrition data and metadata
+        nutrition_data = nutrition_response.data
+        metadata = nutrition_response.metadata if hasattr(nutrition_response, 'metadata') else {}
+        
+        # Track token usage (but don't count against limits)
+        if metadata:
+            await TokenUsageService.track_token_usage(
+                db=db,
+                user=current_user,
+                model_name=metadata.get("model_name", "unknown"),
+                agent_type="nutrition_calculator_agent",
+                input_tokens=metadata.get("input_tokens", 0),
+                output_tokens=metadata.get("output_tokens", 0),
+                total_tokens=metadata.get("total_tokens", 0),
+                endpoint="/api/v1/ai/calculate-nutrition",
+                cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
+                cache_read_tokens=metadata.get("cache_read_tokens", 0)
+            )
+        
+        # Check if there's existing nutrition data from food upload (not nutrition advice)
+        postgres_client = PostgresClient()
+        existing_data = await postgres_client.get_nutrition_data(str(current_user.id))
+        
+        # Update database only if data exists and was saved from food upload
+        # (i.e., doesn't have nutritionist_recommendations field)
+        if existing_data:
+            data_content = existing_data.get("data", {})
+            # Check if this was from food upload (has food_analysis but no nutritionist_recommendations)
+            if "food_analysis" in data_content and "nutritionist_recommendations" not in data_content:
+                logger.info("Updating existing nutrition data from food upload", 
+                           user_id=str(current_user.id))
+                
+                from datetime import datetime, timezone
+                
+                # Update the food_analysis with new nutrition values
+                updated_data = {
+                    "food_analysis": {
+                        "fooditems": nutrition_data.get("fooditems", []),
+                        "nutrition": nutrition_data.get("nutrition", {})
+                    },
+                    "meal_type": data_content.get("meal_type"),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "updated_via_calculator": True
+                }
+                
+                await postgres_client.save_nutrition_data(
+                    user_id=str(current_user.id),
+                    data=updated_data
+                )
+                logger.info("Nutrition data updated successfully", user_id=str(current_user.id))
+            else:
+                logger.info("Skipping database update - data is from nutrition advice", 
+                           user_id=str(current_user.id))
+        else:
+            logger.info("No existing nutrition data to update", user_id=str(current_user.id))
+        
+        logger.info(f"Nutrition calculation completed for user {current_user.id}")
+        
+        return NutritionCalculationResponse(
+            fooditems=nutrition_data.get("fooditems", []),
+            nutrition=nutrition_data.get("nutrition", {})
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Nutrition calculation error for user {current_user.id}", 
+                    error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to calculate nutrition values. Please try again later."
         )
 
 

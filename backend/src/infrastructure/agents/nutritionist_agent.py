@@ -7,23 +7,33 @@ from ..utils.logger import logger
 from .agent_response import AgentResponse
 
 
-async def nutritionist_agent(food_analysis: str, medical_report: str, meal_type: str, gender: str, age: int, weight: float, height: float) -> AgentResponse:
+async def nutritionist_agent(
+    food_analysis: str, 
+    medical_report: str, 
+    meal_type: str, 
+    gender: str, 
+    age: int, 
+    weight: float, 
+    height: float,
+    nutrition_values: dict = None
+) -> AgentResponse:
     """
     Generate personalized nutritionist recommendations based on food analysis and user profile.
     
     Args:
-        food_analysis: Analysis from food agent
+        food_analysis: Analysis from food agent (food items as string)
         medical_report: Medical report data
         meal_type: Type of meal (breakfast, lunch, dinner, snack)
         gender: User's gender
         age: User's age in years
         weight: User's weight in kg
         height: User's height in cm
+        nutrition_values: Optional dict with nutrition data (calories, protein, carbs, fat, fiber, sugar)
         
     Returns:
         Nutritionist recommendations as string
     """
-    logger.info("Nutritionist agent invoked", meal_type=meal_type, age=age, gender=gender)
+    logger.info("Nutritionist agent invoked", meal_type=meal_type, age=age, gender=gender, has_nutrition=bool(nutrition_values))
     
     # Load environment variables
     load_dotenv()
@@ -60,11 +70,25 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_type:
         ),
     }
 
+    # Build nutrition section if values are provided
+    nutrition_section = ""
+    if nutrition_values:
+        nutrition_section = (
+            f"**Nutritional Breakdown:**\n"
+            f"- Calories: {nutrition_values.get('calories', 'N/A')}\n"
+            f"- Protein: {nutrition_values.get('protein', 'N/A')}\n"
+            f"- Carbohydrates: {nutrition_values.get('carbohydrates', 'N/A')}\n"
+            f"- Fat: {nutrition_values.get('fat', 'N/A')}\n"
+            f"- Fiber: {nutrition_values.get('fiber', 'N/A')}\n"
+            f"- Sugar: {nutrition_values.get('sugar', 'N/A')}\n\n"
+        )
+
     user_message = {
         "role": "user",
         "content": (
             f"**Meal Type:** {meal_type}\n\n"
             f"**Food Consumed:**\n{food_analysis}\n\n"
+            f"{nutrition_section}"
             f"**User Profile:**\n"
             f"- Age: {age} years\n"
             f"- Gender: {gender}\n"

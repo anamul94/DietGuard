@@ -25,6 +25,11 @@ from .ai_schemas import (
     SubscriptionLimitError,
 )
 
+from .nutrition_calculator_schemas import (
+    NutritionCalculationRequest,
+    NutritionCalculationResponse,
+)
+
 __all__ = [
     # Food schemas
     "FoodItem",
@@ -40,4 +45,7 @@ __all__ = [
     "ReportUploadResponse",
     "ErrorResponse",
     "SubscriptionLimitError",
+    # Nutrition Calculator schemas
+    "NutritionCalculationRequest",
+    "NutritionCalculationResponse",
 ]
