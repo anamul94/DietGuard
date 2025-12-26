@@ -34,6 +34,7 @@ def encode_pdf_to_base64(pdf_file: UploadFile) -> Dict[str, str]:
     """Convert uploaded PDF to base64-encoded image (first page only)"""
     try:
         from pdf2image import convert_from_bytes
+        from pdf2image.exceptions import PDFInfoNotInstalledError
         
         # Read the PDF file
         pdf_bytes = pdf_file.file.read()
@@ -60,5 +61,10 @@ def encode_pdf_to_base64(pdf_file: UploadFile) -> Dict[str, str]:
             "base64_string": base64_string
         }
     
+    except PDFInfoNotInstalledError:
+        raise HTTPException(
+            status_code=500, 
+            detail="PDF conversion service unavailable. Poppler is not installed on the server."
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid PDF file or conversion failed: {str(e)}")

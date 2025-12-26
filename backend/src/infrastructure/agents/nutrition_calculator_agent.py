@@ -28,19 +28,22 @@ class NutritionCalculation(BaseModel):
     nutrition: NutritionInfo = Field(description="Total nutritional information for all food items combined")
 
 
-async def nutrition_calculator_agent(fooditems: List[str]):
+async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: dict = None):
     """
     Calculate clinically accurate nutrition values for given food items.
     
     Args:
         fooditems: List of food item descriptions with quantities
                   (e.g., ["1 grilled chicken with naan roti", "2 slices pizza with cheese and tomato"])
+        old_food_analysis: Optional previous food analysis with nutrition values for reference
+                          to maintain calculation consistency (e.g., {"fooditems": [...], "nutrition": {...}})
         
     Returns:
         AgentResponse with structured NutritionCalculation data
     """
     item_count = len(fooditems)
-    logger.info("Nutrition calculator agent invoked", item_count=item_count)
+    has_reference = old_food_analysis is not None
+    logger.info("Nutrition calculator agent invoked", item_count=item_count, has_reference=has_reference)
     
     # Load environment variables
     load_dotenv()
@@ -68,40 +71,75 @@ async def nutrition_calculator_agent(fooditems: List[str]):
         logger.error("Nutrition calculator agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return AgentResponse.error_response("Nutrition calculation service is temporarily unavailable. Please try again later.")
 
+    # Build system message with optional reference context
+    base_system_content = (
+        "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist and registered dietitian with 15 years of experience. "
+        "Your specialty is providing clinically accurate nutritional analysis based on USDA FoodData Central and international nutrition databases. "
+        "\n\nYOUR TASK:"
+        "\nCalculate precise, clinically accurate nutritional values for the provided food items."
+        "\n\nIMPORTANT GUIDELINES:"
+        "\n1. **Accuracy**: Base all calculations on established nutrition databases (USDA FoodData Central, NCCDB)"
+        "\n2. **Quantities**: Parse quantities from descriptions (e.g., '1 grilled chicken' = ~150g, '2 slices pizza' = ~200g)"
+        "\n3. **Standard Servings**: Use standard serving sizes when quantities are not specified"
+        "\n4. **Ingredients**: Account for all visible ingredients and preparation methods"
+        "\n5. **Aggregation**: Provide TOTAL nutrition for ALL items combined"
+        "\n6. **Clinical Standards**: Ensure values are realistic and medically sound"
+        "\n7. **Precision**: Round to whole numbers for calories, use grams (g) for macros"
+    )
+    
+    # Add reference context if old food analysis is provided
+    if old_food_analysis:
+        reference_context = (
+            "\n\n**REFERENCE DATA FOR CONSISTENCY:**"
+            "\nYou have been provided with a previous food analysis as reference. Use this to:"
+            "\n- Maintain consistent calculation methodology and standards"
+            "\n- Apply the same serving size assumptions and quantity interpretations"
+            "\n- Ensure consistency in how you calculate nutrition values"
+            "\n- The reference is for maintaining calculation consistency only"
+            "\n- You MUST recalculate ALL items in the new food list from scratch"
+            "\n- Even if some items appear similar, calculate fresh values for the new list"
+        )
+        base_system_content += reference_context
+    
+    base_system_content += (
+        "\n\nSTANDARD SERVING SIZES (when not specified):"
+        "\n- Pizza slice: 100-120g"
+        "\n- Grilled chicken breast: 150g"
+        "\n- Naan/roti: 80-100g"
+        "\n- Rice (cooked): 150g"
+        "\n- Salad: 100g"
+        "\n\nBe precise, objective, and clinically accurate in all calculations."
+    )
+    
     system_message = {
         "role": "system",
-        "content": (
-            "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist and registered dietitian with 15 years of experience. "
-            "Your specialty is providing clinically accurate nutritional analysis based on USDA FoodData Central and international nutrition databases. "
-            "\n\nYOUR TASK:"
-            "\nCalculate precise, clinically accurate nutritional values for the provided food items."
-            "\n\nIMPORTANT GUIDELINES:"
-            "\n1. **Accuracy**: Base all calculations on established nutrition databases (USDA FoodData Central, NCCDB)"
-            "\n2. **Quantities**: Parse quantities from descriptions (e.g., '1 grilled chicken' = ~150g, '2 slices pizza' = ~200g)"
-            "\n3. **Standard Servings**: Use standard serving sizes when quantities are not specified"
-            "\n4. **Ingredients**: Account for all visible ingredients and preparation methods"
-            "\n5. **Aggregation**: Provide TOTAL nutrition for ALL items combined"
-            "\n6. **Clinical Standards**: Ensure values are realistic and medically sound"
-            "\n7. **Precision**: Round to whole numbers for calories, use grams (g) for macros"
-            "\n\nSTANDARD SERVING SIZES (when not specified):"
-            "\n- Pizza slice: 100-120g"
-            "\n- Grilled chicken breast: 150g"
-            "\n- Naan/roti: 80-100g"
-            "\n- Rice (cooked): 150g"
-            "\n- Salad: 100g"
-            "\n\nBe precise, objective, and clinically accurate in all calculations."
-        ),
+        "content": base_system_content,
     }
 
     # Format food items for the prompt
     fooditems_text = "\n".join([f"- {item}" for item in fooditems])
     
+    # Build user message with optional reference data
+    user_content = f"Calculate the total nutritional values for these food items:\n\n{fooditems_text}\n\n"
+    
+    if old_food_analysis:
+        old_items = old_food_analysis.get("fooditems", [])
+        old_nutrition = old_food_analysis.get("nutrition", {})
+        
+        reference_text = (
+            "\n**REFERENCE - Previous Analysis:**\n"
+            f"Previous food items: {', '.join(old_items)}\n"
+            f"Previous nutrition values: {old_nutrition}\n\n"
+            "Use this reference to maintain consistent calculation methodology. "
+            "Recalculate ALL items in the new list above with the same standards.\n\n"
+        )
+        user_content += reference_text
+    
+    user_content += "Provide clinically accurate nutrition data based on standard serving sizes and the quantities mentioned."
+    
     message = {
         "role": "user",
-        "content": (
-            f"Calculate the total nutritional values for these food items:\n\n{fooditems_text}\n\n"
-            "Provide clinically accurate nutrition data based on standard serving sizes and the quantities mentioned."
-        ),
+        "content": user_content,
     }
 
     try:

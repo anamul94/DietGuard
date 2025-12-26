@@ -687,10 +687,30 @@ async def calculate_nutrition(
     """
     try:
         logger.info(f"Nutrition calculation request from user {current_user.id}", 
-                   item_count=len(request.fooditems))
+                   item_count=len(request.fooditems),
+                   has_old_analysis=request.old_food_analysis is not None)
         
-        # Call nutrition calculator agent
-        nutrition_response = await nutrition_calculator_agent(request.fooditems)
+        # Determine old food analysis for reference
+        old_food_analysis = request.old_food_analysis
+        
+        # If not provided in request, try to fetch from database
+        if not old_food_analysis:
+            postgres_client = PostgresClient()
+            existing_data = await postgres_client.get_nutrition_data(str(current_user.id))
+            
+            if existing_data:
+                data_content = existing_data.get("data", {})
+                # Extract old food analysis if available
+                if "food_analysis" in data_content:
+                    old_food_analysis = data_content.get("food_analysis")
+                    logger.info("Using old food analysis from database as reference", 
+                               user_id=str(current_user.id))
+        
+        # Call nutrition calculator agent with optional reference data
+        nutrition_response = await nutrition_calculator_agent(
+            request.fooditems, 
+            old_food_analysis=old_food_analysis
+        )
         
         # Check if agent failed
         if not nutrition_response.success:
