@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from sqlalchemy import select
 from src.infrastructure.database.database import AsyncSessionLocal
 from src.infrastructure.database.auth_models import Package
+# Import patient models to register them with SQLAlchemy
+from src.infrastructure.database import patient_models  # noqa: F401
 
 
 async def seed_packages():
