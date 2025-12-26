@@ -10,7 +10,8 @@ from .agent_response import AgentResponse
 async def nutritionist_agent(
     food_analysis: str, 
     medical_report: str, 
-    meal_type: str, 
+    meal_type: str,
+    meal_time: str,  # NEW: Time when meal was consumed (HH:MM)
     gender: str, 
     age: int, 
     weight: float, 
@@ -24,6 +25,7 @@ async def nutritionist_agent(
         food_analysis: Analysis from food agent (food items as string)
         medical_report: Medical report data
         meal_type: Type of meal (breakfast, lunch, dinner, snack)
+        meal_time: Time when meal was consumed (HH:MM format)
         gender: User's gender
         age: User's age in years
         weight: User's weight in kg
@@ -33,7 +35,7 @@ async def nutritionist_agent(
     Returns:
         Nutritionist recommendations as string
     """
-    logger.info("Nutritionist agent invoked", meal_type=meal_type, age=age, gender=gender, has_nutrition=bool(nutrition_values))
+    logger.info("Nutritionist agent invoked", meal_type=meal_type, meal_time=meal_time, age=age, gender=gender, has_nutrition=bool(nutrition_values))
     
     # Load environment variables
     load_dotenv()
@@ -86,7 +88,7 @@ async def nutritionist_agent(
     user_message = {
         "role": "user",
         "content": (
-            f"**Meal Type:** {meal_type}\n\n"
+            f"**Meal Type:** {meal_type} (consumed at {meal_time})\n\n"
             f"**Food Consumed:**\n{food_analysis}\n\n"
             f"{nutrition_section}"
             f"**User Profile:**\n"

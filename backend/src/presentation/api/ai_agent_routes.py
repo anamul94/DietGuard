@@ -376,19 +376,22 @@ async def get_nutrition_advice(
         
         # Import date utility
         from ...infrastructure.utils.date_utils import calculate_age
+        from ...application.services.patient_service import PatientService
         from datetime import datetime, timezone
         import json
         
-        # Calculate age from date of birth
-        age = calculate_age(current_user.date_of_birth)
-        if age is None:
-            logger.warning("User has no date of birth", user_id=str(current_user.id))
-            age = 0  # Default age if not provided
+        # Get patient profile data (includes age, gender, etc.)
+        patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
         
-        # Get user profile data
-        gender = current_user.gender or "not specified"
-        weight = float(current_user.weight) if current_user.weight else None
-        height = float(current_user.height) if current_user.height else None
+        # Extract patient data
+        persona_data = patient_profile.get("persona", {})
+        age = persona_data.get("age", 0) or 0
+        gender = persona_data.get("gender") or "not specified"
+        weight = persona_data.get("weight_kg")
+        height = persona_data.get("height_cm")
+        
+        logger.info("Patient profile retrieved", user_id=str(current_user.id), 
+                   age=age, gender=gender, has_weight=weight is not None, has_height=height is not None)
         
         # Check for medical report
         postgres_client = PostgresClient()
@@ -403,17 +406,32 @@ async def get_nutrition_advice(
         else:
             logger.info("No medical report found for user", user_id=str(current_user.id))
         
-        # Save food_analysis to database
+        # Prepare meal timing data
+        from datetime import date as date_type, time as time_type
+        meal_date = request.meal_date or date_type.today()
+        
+        # Parse meal_time string to time object (HH:MM -> time)
+        hour, minute = map(int, request.meal_time.split(':'))
+        meal_time = time_type(hour, minute)
+        
+        # Save food_analysis to database with meal timing
         food_analysis_data = request.food_analysis.model_dump()
         await postgres_client.save_nutrition_data(
             user_id=str(current_user.id),
             data={
                 "food_analysis": food_analysis_data,
                 "meal_type": request.meal_type,
+                "meal_time": request.meal_time,
+                "meal_date": meal_date.isoformat(),
                 "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+            },
+            meal_time=meal_time,
+            meal_date=meal_date
         )
-        logger.info("Food analysis saved to database", user_id=str(current_user.id))
+        logger.info("Food analysis saved to database with meal timing", 
+                   user_id=str(current_user.id),
+                   meal_time=request.meal_time,
+                   meal_date=str(meal_date))
         
         # Extract only fooditems for nutritionist agent
         fooditems = food_analysis_data.get("fooditems", [])
@@ -427,13 +445,15 @@ async def get_nutrition_advice(
                    gender=gender, 
                    has_medical_report=bool(medical_report),
                    fooditems_count=len(fooditems),
-                   has_nutrition=bool(nutrition_values))
+                   has_nutrition=bool(nutrition_values),
+                   meal_time=request.meal_time)
         
-        # Call nutritionist agent with fooditems and nutrition values
+        # Call nutritionist agent with fooditems, nutrition values, and meal timing
         nutritionist_response = await nutritionist_agent(
             food_analysis=fooditems_str,
             medical_report=medical_report,
             meal_type=request.meal_type,
+            meal_time=request.meal_time,  # Pass meal time to agent
             gender=gender,
             age=age,
             weight=weight,
@@ -469,9 +489,16 @@ async def get_nutrition_advice(
         
         logger.info(f"Nutrition advice completed for user {current_user.id}")
         
+        # Import MealInfo schema
+        from ..schemas.nutrition_schemas import MealInfo
+        
         return NutritionAdviceResponse(
             user_email=current_user.email,
             meal_type=request.meal_type,
+            meal_info=MealInfo(
+                meal_time=request.meal_time,
+                meal_date=(request.meal_date or date_type.today()).isoformat()
+            ),
             nutritionist_recommendations=nutritionist_advice
         )
         

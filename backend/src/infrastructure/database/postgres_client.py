@@ -50,15 +50,19 @@ class PostgresClient:
             logger.error("Failed to retrieve report data", user_id=user_id, error=str(e), exception_type=type(e).__name__)
             raise
     
-    async def save_nutrition_data(self, user_id: str, data: dict):
+    async def save_nutrition_data(self, user_id: str, data: dict, meal_time=None, meal_date=None):
         try:
-            logger.info("Saving nutrition data", user_id=user_id)
+            logger.info("Saving nutrition data", user_id=user_id, 
+                       meal_time=str(meal_time) if meal_time else None,
+                       meal_date=str(meal_date) if meal_date else None)
             async with AsyncSessionLocal() as session:
                 # Create new record (append, don't delete existing)
                 nutrition = NutritionData(
                     user_id=user_id,
                     data=json.dumps(data),
-                    expires_at=None
+                    expires_at=None,
+                    meal_time=meal_time,
+                    meal_date=meal_date
                 )
                 session.add(nutrition)
                 await session.commit()
