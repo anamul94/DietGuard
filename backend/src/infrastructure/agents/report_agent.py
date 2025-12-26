@@ -5,9 +5,10 @@ from langchain.chat_models import init_chat_model
 from langchain_aws import ChatBedrock
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
+from .agent_response import AgentResponse
 
 
-async def report_agent(data: str, file_type: str, mime_type: str) -> str:
+async def report_agent(data: str, file_type: str, mime_type: str) -> AgentResponse:
     """
     data: base64-encoded string of the file/image
     file_type: "image" | "file" | "audio" | "text"
@@ -98,12 +99,35 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> str:
         response = await asyncio.to_thread(
             lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
         )
+
+        print(response)
         
         # Flush events to Langfuse
         flush_langfuse()
         
-        logger.info("Report agent completed successfully", file_type=file_type, mime_type=mime_type)
-        return response.text() if hasattr(response, "text") else str(response)
+        # Extract metadata
+        meta = response.response_metadata if hasattr(response, 'response_metadata') else {}
+        usage = response.usage_metadata if hasattr(response, 'usage_metadata') else {}
+        
+        # Prepare metadata for token tracking
+        metadata = {
+            "model_name": meta.get("model_name", "claude-3.7-sonnet"),
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "cache_creation_tokens": usage.get("input_token_details", {}).get("cache_creation", 0),
+            "cache_read_tokens": usage.get("input_token_details", {}).get("cache_read", 0),
+        }
+        
+        # Get response text
+        response_text = response.content if hasattr(response, "content") else str(response)
+        
+        logger.info("Report agent completed successfully", 
+                   file_type=file_type, 
+                   mime_type=mime_type,
+                   token_usage=usage)
+        
+        return AgentResponse.success_response(response_text, metadata=metadata)
     except Exception as e:
         logger.error("Report agent model invocation failed", error=str(e), exception_type=type(e).__name__, file_type=file_type)
-        return f"Model invocation failed: {str(e)}"
+        return AgentResponse.error_response(f"Model invocation failed: {str(e)}")

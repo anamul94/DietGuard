@@ -54,7 +54,7 @@ async def nutritionist_agent(
             "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
-            temperature=0.3,
+            temperature=0.1,
         )
     except Exception as e:
         logger.error("Nutritionist agent LLM initialization failed", error=str(e))

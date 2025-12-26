@@ -31,18 +31,34 @@ def encode_image_to_base64(image_file: UploadFile) -> Dict[str, str]:
 
 
 def encode_pdf_to_base64(pdf_file: UploadFile) -> Dict[str, str]:
-    """Convert uploaded PDF to base64 string"""
+    """Convert uploaded PDF to base64-encoded image (first page only)"""
     try:
+        from pdf2image import convert_from_bytes
+        
         # Read the PDF file
         pdf_bytes = pdf_file.file.read()
         
+        # Convert PDF to images (first page only for now)
+        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, fmt='jpeg')
+        
+        if not images:
+            raise HTTPException(status_code=400, detail="Could not convert PDF to image")
+        
+        # Get the first page as image
+        first_page = images[0]
+        
+        # Convert PIL Image to bytes
+        img_byte_arr = io.BytesIO()
+        first_page.save(img_byte_arr, format='JPEG', quality=95)
+        img_byte_arr.seek(0)
+        
         # Convert to base64
-        base64_string = base64.b64encode(pdf_bytes).decode('utf-8')
+        base64_string = base64.b64encode(img_byte_arr.read()).decode('utf-8')
         
         return {
-            "mime_type": "application/pdf",
+            "mime_type": "image/jpeg",
             "base64_string": base64_string
         }
     
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid PDF file: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid PDF file or conversion failed: {str(e)}")

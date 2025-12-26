@@ -207,6 +207,11 @@ async def upload_report(
         filenames = []
         individual_analyses = []
         
+        # Token tracking accumulators
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tokens = 0
+        
         for file in files:
             # Validate file type
             file_extension = file.filename.split(".")[-1].lower()
@@ -221,19 +226,33 @@ async def upload_report(
             # Handle PDF or image
             if file_extension == 'pdf':
                 encoded_data = encode_pdf_to_base64(file)
-                analysis = await report_agent(
+                agent_response = await report_agent(
                     encoded_data["base64_string"], 
-                    "document", 
+                    "image" , # Use 'image' type for PDFs - Bedrock treats them as images,
                     encoded_data["mime_type"]
                 )
             else:  # image files
                 encoded_data = encode_image_to_base64(file)
-                analysis = await report_agent(
+                agent_response = await report_agent(
                     encoded_data["base64_string"], 
                     "image", 
                     encoded_data["mime_type"]
                 )
             
+            # Extract analysis and metadata from AgentResponse
+            if not agent_response.success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Report analysis failed: {agent_response.data}"
+                )
+            
+            analysis = agent_response.data
+            
+            # Accumulate token usage
+            if agent_response.metadata:
+                total_input_tokens += agent_response.metadata.get("input_tokens", 0)
+                total_output_tokens += agent_response.metadata.get("output_tokens", 0)
+                total_tokens += agent_response.metadata.get("total_tokens", 0)
             
             # Parse JSON output from report_agent (EHR format)
             import json
@@ -378,9 +397,9 @@ async def upload_report(
             user=current_user,
             model_name="claude-3.7-sonnet",
             agent_type="report_agent",
-            input_tokens=0,
-            output_tokens=0,
-            total_tokens=0,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            total_tokens=total_tokens,
             endpoint="/api/v1/ai/upload-report"
         )
         
