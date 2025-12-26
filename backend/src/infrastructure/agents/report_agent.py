@@ -7,13 +7,13 @@ from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
 
 
-async def report_agent(data: str, type: str, mime_type: str) -> str:
+async def report_agent(data: str, file_type: str, mime_type: str) -> str:
     """
     data: base64-encoded string of the file/image
-    type: "image" | "file" | "audio" | "text"
+    file_type: "image" | "file" | "audio" | "text"
     mime_type: e.g. "image/jpeg" or "application/pdf"
     """
-    logger.info("Report agent invoked", file_type=type, mime_type=mime_type)
+    logger.info("Report agent invoked", file_type=file_type, mime_type=mime_type)
     
     # Load environment variables
     load_dotenv()
@@ -30,7 +30,8 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
 
     try:
         llm = init_chat_model(
-            "anthropic.claude-3-haiku-20240307-v1:0",
+            # "anthropic.claude-3-haiku-20240307-v1:0",
+            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
         )
@@ -47,28 +48,43 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
     system_message = {
         "role": "system",
         "content": (
-            "You are Dr. Maria Chen, a licensed physician specializing in diagnostic medicine and laboratory analysis. "
-            "Review medical reports and provide professional medical assessment. "
-            "Never mention AI, image analysis, or technology - respond as a practicing doctor. "
-            "Extract and interpret medical information professionally. \n\n"
-            "Provide assessment in this format:\n"
-            "**CLINICAL FINDINGS**\n"
-            "**LABORATORY RESULTS**\n"
-            "**DIAGNOSTIC IMPRESSIONS**\n"
-            "Maintain professional medical terminology and clinical accuracy."
-            "**Output in markdown format with headings and bullet points where appropriate."
-            "**Highlight critical findings clearly."
-            "Highlight key values in the LABORATORY RESULTS section."
-            "No need MEDICAL RECOMMENDATIONS, FOLLOW-UP REQUIREMENTS just extract information"
+            "You are a medical data extraction specialist. "
+            "Your ONLY task is to extract information that is explicitly present in the medical report. "
+            "DO NOT add any interpretations, insights, recommendations, or assessments that are not in the document. "
+            "DO NOT infer normal/abnormal ranges unless stated in the report. "
+            "DO NOT provide medical advice or clinical opinions. \n\n"
+            "Output the extracted data in this JSON structure:\n"
+            "{\n"
+            "  \"resourceType\": \"DiagnosticReport\",\n"
+            "  \"status\": \"final\",\n"
+            "  \"effectiveDateTime\": \"YYYY-MM-DD\" (if date is in report),\n"
+            "  \"result\": [\n"
+            "    {\n"
+            "      \"testName\": \"Test name as written\",\n"
+            "      \"value\": \"Exact value with unit\",\n"
+            "      \"referenceRange\": \"Range if stated in report\",\n"
+            "      \"interpretation\": \"Only if explicitly stated\"\n"
+            "    }\n"
+            "  ],\n"
+            "  \"clinicalFindings\": [\"Finding 1\", \"Finding 2\"],\n"
+            "  \"diagnosticImpressions\": [\"Impression 1\"] (only if stated)\n"
+            "}\n\n"
+            "Rules:\n"
+            "- Extract exact values, dates, and measurements as written\n"
+            "- Preserve medical terminology from the document\n"
+            "- If a field has no data in the report, use empty array [] or omit it\n"
+            "- Do not add reference ranges unless they are in the report\n"
+            "- Do not interpret or explain findings\n"
+            "- Output ONLY valid JSON, no markdown formatting"
         )
     }
 
     message = {
         "role": "user",
         "content": [
-            {"type": "text", "text": "Extract all clinically relevant information. and show info in a structured format."},
+            {"type": "text", "text": "Extract all data from this medical report and output as JSON following the exact structure specified."},
             {
-                "type": type,
+                "type": file_type,
                 "source_type": "base64",
                 "mime_type": mime_type,
                 "data": data,
@@ -86,8 +102,8 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
         # Flush events to Langfuse
         flush_langfuse()
         
-        logger.info("Report agent completed successfully", file_type=type, mime_type=mime_type)
+        logger.info("Report agent completed successfully", file_type=file_type, mime_type=mime_type)
         return response.text() if hasattr(response, "text") else str(response)
     except Exception as e:
-        logger.error("Report agent model invocation failed", error=str(e), exception_type=type(e).__name__, file_type=type)
+        logger.error("Report agent model invocation failed", error=str(e), exception_type=type(e).__name__, file_type=file_type)
         return f"Model invocation failed: {str(e)}"

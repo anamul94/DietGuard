@@ -21,11 +21,11 @@ from ...application.services.subscription_service import SubscriptionService
 from ...application.services.token_usage_service import TokenUsageService
 from ...infrastructure.utils.logger import logger
 from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
-from ...infrastructure.agents.food_agent import food_agent
-from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.report_agent import report_agent
-from ...infrastructure.agents.summary_agent import summary_agent
+from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
+from ...infrastructure.agents.summary_agent import summary_agent as generate_summary
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
+from ...infrastructure.agents.report_merge_agent import report_merge_agent  # NEW
 from ...infrastructure.database.postgres_client import PostgresClient
 
 router = APIRouter(tags=["AI Agents"])
@@ -175,46 +175,10 @@ async def upload_food(
 
 @router.post(
     "/upload-report",
-    response_model=ReportUploadResponse,
-    summary="Upload Medical Reports for AI Analysis",
-    description="""
-    Upload medical reports (PDF or images) for AI-powered analysis.
-    
-    **Authentication Required:** Yes (JWT Bearer token)
-    
-    **Subscription Limits:**
-    - Free: 2 uploads/day
-    - Trial: 20 uploads/day
-    - Paid: 20 uploads/day
-    
-    **Supported Formats:** PDF, JPG, JPEG, PNG
-    
-    **Process:**
-    1. Reports are analyzed by AI medical analysis agent
-    2. Key findings are extracted from each report
-    3. Combined summary is generated
-    4. Health recommendations are provided
-    
-    **Returns:**
-    - files_processed count
-    - filenames list
-    - individual_analyses for each report
-    - combined_summary of all reports
-    """,
-    responses={
-        200: {
-            "description": "Successful report analysis",
-            "model": ReportUploadResponse
-        },
-        401: {
-            "description": "Unauthorized - Invalid or missing JWT token",
-            "model": ErrorResponse
-        },
-        403: {
-            "description": "Forbidden - Daily upload limit reached",
-            "model": SubscriptionLimitError
-        }
-    }
+    response_model=None,  # Allow flexible response format
+    status_code=status.HTTP_200_OK,
+    summary="Upload Medical Reports",
+    description="Upload medical reports (PDF or images) for AI-powered analysis with intelligent merging"
 )
 async def upload_report(
     files: List[UploadFile] = File(..., description="Medical reports (PDF or images)"),
@@ -244,42 +208,175 @@ async def upload_report(
         individual_analyses = []
         
         for file in files:
-            content = await file.read()
+            # Validate file type
+            file_extension = file.filename.split(".")[-1].lower()
+            allowed_extensions = {"jpg", "jpeg", "png", "pdf"}
             
-            # Handle PDF or image
-            if file.content_type == 'application/pdf':
-                base64_data = encode_pdf_to_base64(content)
-            elif file.content_type and file.content_type.startswith('image/'):
-                base64_data = encode_image_to_base64(content)
-            else:
+            if file_extension not in allowed_extensions:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Invalid file type: {file.filename}. Only PDF and images are allowed."
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid file type: {file.filename}. Only PDF and image files allowed"
                 )
             
-            file_data_list.append(base64_data)
+            # Handle PDF or image
+            if file_extension == 'pdf':
+                encoded_data = encode_pdf_to_base64(file)
+                analysis = await report_agent(
+                    encoded_data["base64_string"], 
+                    "document", 
+                    encoded_data["mime_type"]
+                )
+            else:  # image files
+                encoded_data = encode_image_to_base64(file)
+                analysis = await report_agent(
+                    encoded_data["base64_string"], 
+                    "image", 
+                    encoded_data["mime_type"]
+                )
+            
+            
+            # Parse JSON output from report_agent (EHR format)
+            import json
+            try:
+                analysis_dict = json.loads(analysis)
+            except json.JSONDecodeError:
+                # If parsing fails, keep as string (fallback for non-JSON responses)
+                analysis_dict = {"raw_text": analysis}
+            
             filenames.append(file.filename)
-            
-            # Analyze individual report
-            logger.info(f"Analyzing report: {file.filename}")
-            analysis = await report_agent(base64_data)
-            
             individual_analyses.append({
                 "filename": file.filename,
-                "analysis": analysis.get("analysis", "No analysis available")
+                "analysis": analysis_dict
             })
         
-        # Generate combined summary
-        logger.info("Generating combined summary")
-        combined_summary = await summary_agent(
-            [a["analysis"] for a in individual_analyses]
-        )
         
-        # Track token usage
+        # Medical reports don't need nutritional summary
+        # The extracted EHR data from report_agent is sufficient
+        combined_summary = None
+        
+        
+        # Check if user has existing report
+        postgres_client = PostgresClient()
+        existing_report_data = await postgres_client.get_report_data(str(current_user.id))
+        
+        from datetime import datetime, timezone
+        
+        if existing_report_data:
+            try:
+                # User has existing report - update overlapping fields
+                logger.info("Existing report found, updating fields", user_id=str(current_user.id))
+                
+                old_report = existing_report_data.get("data", {})
+                
+                # Handle both old and new data structures
+                if "ehr_data" in old_report:
+                    old_ehr = old_report.get("ehr_data", {})
+                elif "individual_analyses" in old_report:
+                    # Old format - migrate on the fly
+                    old_analyses = old_report.get("individual_analyses", [])
+                    if old_analyses and isinstance(old_analyses, list) and len(old_analyses) > 0:
+                        first_analysis = old_analyses[0]
+                        if isinstance(first_analysis, dict):
+                            analysis_content = first_analysis.get("analysis", {})
+                            if isinstance(analysis_content, str):
+                                # Try to parse JSON string
+                                import json
+                                try:
+                                    old_ehr = json.loads(analysis_content)
+                                except:
+                                    old_ehr = {}
+                            else:
+                                old_ehr = analysis_content if isinstance(analysis_content, dict) else {}
+                        else:
+                            old_ehr = {}
+                    else:
+                        old_ehr = {}
+                else:
+                    old_ehr = {}
+                
+                # Get new EHR data from first analysis
+                new_ehr = individual_analyses[0]["analysis"] if individual_analyses else {}
+
+                
+                # Simple merge: Update overlapping fields
+                if isinstance(old_ehr, dict) and isinstance(new_ehr, dict):
+                    # Update result array (lab tests)
+                    old_results = old_ehr.get("result", [])
+                    new_results = new_ehr.get("result", [])
+                    # Ensure results are lists, not strings
+                    if not isinstance(old_results, list):
+                        old_results = []
+                    if not isinstance(new_results, list):
+                        new_results = []
+                    
+                    # Create map of old results by testName
+                    old_results_map = {r.get("testName"): r for r in old_results if isinstance(r, dict)}
+                    
+                    # Update overlapping tests, add new ones
+                    for new_test in new_results:
+                        if isinstance(new_test, dict):
+                            test_name = new_test.get("testName")
+                            if test_name:
+                                old_results_map[test_name] = new_test  # Update or add
+                    
+                    # Build merged EHR
+                    merged_ehr = {
+                        "resourceType": new_ehr.get("resourceType", "DiagnosticReport"),
+                        "status": "final",
+                        "effectiveDateTime": new_ehr.get("effectiveDateTime"),
+                        "result": list(old_results_map.values()),
+                        "clinicalFindings": new_ehr.get("clinicalFindings", []),
+                        "diagnosticImpressions": new_ehr.get("diagnosticImpressions", []),
+                        "version": old_report.get("version", 0) + 1,
+                        "lastUpdated": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    report_data = {
+                        "ehr_data": merged_ehr,
+                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                        "filenames": filenames,
+                        "version": merged_ehr["version"]
+                    }
+                else:
+                    # Fallback: save as new
+                    report_data = {
+                        "ehr_data": new_ehr,
+                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                        "filenames": filenames,
+                        "version": 1
+                    }
+            except Exception as e:
+                # Merge failed - log error and save as new
+                logger.error(f"Merge failed, saving as new: {str(e)}", user_id=str(current_user.id))
+                new_ehr = individual_analyses[0]["analysis"] if individual_analyses else {}
+                report_data = {
+                    "ehr_data": new_ehr,
+                    "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                    "filenames": filenames,
+                    "version": 1
+                }
+        else:
+            # No existing report - save as new
+            new_ehr = individual_analyses[0]["analysis"] if individual_analyses else {}
+            report_data = {
+                "ehr_data": new_ehr,
+                "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                "filenames": filenames,
+                "version": 1
+            }
+        
+        # Save to database
+        await postgres_client.save_report_data(
+            user_id=str(current_user.id),
+            data=report_data
+        )
+        logger.info("Report saved successfully", user_id=str(current_user.id), version=report_data.get("version"))
+        
+        # Track token usage for report extraction
         await TokenUsageService.track_token_usage(
             db=db,
             user=current_user,
-            model_name="gemini-pro",
+            model_name="claude-3.7-sonnet",
             agent_type="report_agent",
             input_tokens=0,
             output_tokens=0,
@@ -291,14 +388,18 @@ async def upload_report(
         await SubscriptionService.increment_upload_count(db, current_user)
         
         logger.info(f"Report analysis completed for user {current_user.id}", 
-                   files_processed=len(filenames))
+                   files_processed=len(filenames),
+                   version=report_data.get("version"))
         
-        return ReportUploadResponse(
-            files_processed=len(filenames),
-            filenames=filenames,
-            individual_analyses=individual_analyses,
-            combined_summary=combined_summary if isinstance(combined_summary, str) else combined_summary.get("summary", "No summary available")
-        )
+        # Return response
+        return {
+            "files_processed": len(filenames),
+            "filenames": filenames,
+            "ehr_data": report_data.get("ehr_data"),
+            "version": report_data.get("version"),
+            "uploaded_at": report_data.get("uploaded_at")
+        }
+
         
     except HTTPException:
         raise
@@ -307,7 +408,7 @@ async def upload_report(
                     error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process medical reports. Please try again later."
+            detail="Failed to process medical reports: " + str(e) + ""
         )
 
 
