@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
+from fastapi import HTTPException, status, Header
 from ..config.settings import settings
+from ..utils.logger import logger
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """
@@ -71,11 +73,51 @@ def verify_token(token: str, token_type: str = "access") -> Optional[Dict[str, A
         
         # Verify token type
         if payload.get("type") != token_type:
+            logger.warning(f"Token type mismatch: expected '{token_type}', got '{payload.get('type')}'")
             return None
         
         return payload
-    except JWTError:
+    except JWTError as e:
+        logger.warning(f"Token verification failed: {str(e)}")
         return None
+    except Exception as e:
+        logger.error(f"Unexpected error during token verification: {str(e)}")
+        return None
+
+async def get_current_user(authorization: str = Header(..., alias="Authorization")) -> dict:
+    """
+    Dependency to get current user from JWT token.
+    
+    Args:
+        authorization: Authorization header with Bearer token
+        
+    Returns:
+        dict: User payload from token
+        
+    Raises:
+        HTTPException: If token is invalid or missing
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = authorization.replace("Bearer ", "")
+    payload = verify_token(token, token_type="access")
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return {
+        "user_id": payload.get("sub"),
+        "email": payload.get("email")
+    }
 
 def decode_token(token: str) -> Optional[Dict[str, Any]]:
     """

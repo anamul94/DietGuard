@@ -12,12 +12,6 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
-    date_of_birth = Column(DateTime(timezone=True), nullable=True)  # Date of birth for age calculation
-    gender = Column(String(20), nullable=True)
-    weight = Column(Numeric(5, 2), nullable=True)  # Weight in kg (e.g., 75.50)
-    height = Column(Numeric(5, 2), nullable=True)  # Height in cm (e.g., 175.50)
     is_active = Column(Boolean, default=True, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -31,6 +25,10 @@ class User(Base):
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
     password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete-orphan")
     token_usage = relationship("TokenUsage", back_populates="user", cascade="all, delete-orphan")
+    
+    # Patient data relationships (HIPAA-compliant separation)
+    patient_pii = relationship("PatientPII", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    patient_persona = relationship("PatientPersona", back_populates="user", uselist=False)
 
 
 class Package(Base):

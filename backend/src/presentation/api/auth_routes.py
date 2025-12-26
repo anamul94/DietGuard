@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
 from ...infrastructure.database.database import get_db
+from ...infrastructure.database.auth_models import User
 from ...application.services.auth_service import AuthService
 from ...application.services.audit_service import AuditService
-from ...infrastructure.auth.jwt import verify_token, create_access_token
+from ...infrastructure.auth.jwt import verify_token, create_access_token, get_current_user
 from ...infrastructure.utils.logger import logger
 from ...infrastructure.utils.date_utils import validate_date_of_birth
 
@@ -15,14 +17,23 @@ router = APIRouter(tags=["Authentication"])
 
 # Request/Response Models
 class SignUpRequest(BaseModel):
+    # Authentication
     email: EmailStr
     password: str = Field(..., min_length=6)
-    first_name: str = Field(..., min_length=1, max_length=100)
-    last_name: str = Field(..., min_length=1, max_length=100)
-    date_of_birth: Optional[datetime] = Field(None, description="Date of birth in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)")
-    gender: Optional[str] = Field(None, pattern="^(male|female|other)$")
-    weight: Optional[float] = Field(None, ge=20, le=300, description="Weight in kg")
-    height: Optional[float] = Field(None, ge=50, le=250, description="Height in cm")
+    
+    # Patient PII (will be encrypted)
+    full_name: str = Field(..., min_length=1, max_length=200, description="Full name")
+    phone_number: Optional[str] = Field(None, min_length=10, max_length=20, description="Contact/Phone number")
+    
+    # Patient Persona (not encrypted)
+    gender: Optional[str] = Field(None, pattern="^(male|female|other|prefer_not_to_say)$")
+    blood_group: Optional[str] = Field(None, pattern="^(A\\+|A-|B\\+|B-|AB\\+|AB-|O\\+|O-)$")
+    height_cm: Optional[float] = Field(None, ge=50, le=300, description="Height in cm")
+    weight_kg: Optional[float] = Field(None, ge=20, le=500, description="Weight in kg")
+    current_location: Optional[str] = Field(None, max_length=100, description="Current city/state")
+    birth_place: Optional[str] = Field(None, max_length=100, description="Birth city/country")
+    nationality: Optional[str] = Field(None, max_length=50, description="Nationality")
+    date_of_birth: Optional[datetime] = Field(None, description="Date of birth in ISO format (age will be calculated)")
     
     @field_validator('date_of_birth')
     @classmethod
@@ -61,13 +72,13 @@ async def signup(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Register a new user with 7-day paid trial.
+    Register a new user with patient data (HIPAA-compliant).
     
     Args:
-        user_data: User registration data
+        user_data: User registration data including patient PII and persona
         
     Returns:
-        User info and JWT tokens
+        User info with patient data and JWT tokens
         
     Raises:
         HTTPException: 400 for validation errors or duplicate email
@@ -77,12 +88,18 @@ async def signup(
             db=db,
             email=user_data.email,
             password=user_data.password,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-            date_of_birth=user_data.date_of_birth,
+            full_name=user_data.full_name,
+            phone_number=user_data.phone_number,
             gender=user_data.gender,
-            weight=user_data.weight,
-            height=user_data.height
+            blood_group=user_data.blood_group,
+            height_cm=user_data.height_cm,
+            weight_kg=user_data.weight_kg,
+            current_location=user_data.current_location,
+            birth_place=user_data.birth_place,
+            nationality=user_data.nationality,
+            date_of_birth=user_data.date_of_birth,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
         )
         
         # Log successful registration
@@ -136,7 +153,9 @@ async def signin(
         result = await AuthService.authenticate_user(
             db=db,
             email=credentials.email,
-            password=credentials.password
+            password=credentials.password,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
         )
         
         # Log successful login
@@ -299,4 +318,66 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+@router.delete("/delete-account", response_model=MessageResponse)
+async def delete_account(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete user account (HIPAA-compliant).
+    
+    This endpoint:
+    - Deletes all PII (PatientPII) - CASCADE
+    - Anonymizes persona data (sets user_id to NULL)
+    - Soft deletes the user account
+    - Logs the action for HIPAA audit
+    
+    Requires JWT authentication.
+    
+    Returns:
+        Success message confirming account deletion
+    """
+    try:
+        # Get user from database
+        user_result = await db.execute(
+            select(User).where(User.id == current_user["user_id"])
+        )
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        if user.deleted_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Account already deleted"
+            )
+        
+        # Delete account (HIPAA-compliant: deletes PII, anonymizes persona)
+        await AuthService.delete_user_account(
+            db=db,
+            user=user,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        logger.info("User account deleted", user_id=str(user.id))
+        
+        return {
+            "message": "Account successfully deleted. All personal information has been removed."
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete account error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete account. Please try again later."
         )

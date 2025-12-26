@@ -3,12 +3,14 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
+import secrets
 
 from ...infrastructure.database.auth_models import User, Role, UserRole, Subscription, PasswordReset, Package
 from ...infrastructure.auth.password import hash_password, verify_password, validate_password_strength
 from ...infrastructure.auth.jwt import create_access_token, create_refresh_token
 from ...infrastructure.utils.logger import logger
 from ...infrastructure.config.settings import settings
+from .patient_service import PatientService
 
 class AuthService:
     """Service for authentication operations"""
@@ -18,24 +20,41 @@ class AuthService:
         db: AsyncSession,
         email: str,
         password: str,
-        first_name: str,
-        last_name: str,
-        date_of_birth: Optional[datetime] = None,
+        # Patient PII fields
+        full_name: str,
+        phone_number: Optional[str] = None,
+        # Patient Persona fields
         gender: Optional[str] = None,
-        weight: Optional[float] = None,
-        height: Optional[float] = None
+        blood_group: Optional[str] = None,
+        height_cm: Optional[float] = None,
+        weight_kg: Optional[float] = None,
+        current_location: Optional[str] = None,
+        birth_place: Optional[str] = None,
+        nationality: Optional[str] = None,
+        date_of_birth: Optional[datetime] = None,
+        # Request metadata
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Register a new user.
+        Register a new user with patient data.
         
         Args:
             db: Database session
             email: User email
             password: Plain text password
-            first_name: User first name
-            last_name: User last name
-            date_of_birth: User date of birth (optional)
-            gender: User gender (optional)
+            full_name: Patient full name (will be encrypted)
+            phone_number: Phone/contact number (optional, encrypted)
+            gender: Patient gender
+            blood_group: Blood group
+            height_cm: Height in cm
+            weight_kg: Weight in kg
+            current_location: Current location
+            birth_place: Birth place
+            nationality: Nationality
+            date_of_birth: Date of birth (age will be calculated)
+            ip_address: Request IP for audit
+            user_agent: Request user agent for audit
             
         Returns:
             Dict with user info and tokens
@@ -61,16 +80,34 @@ class AuthService:
         user = User(
             email=email,
             password_hash=password_hash,
-            first_name=first_name,
-            last_name=last_name,
-            date_of_birth=date_of_birth,
-            gender=gender,
-            weight=weight,
-            height=height,
             is_active=True
         )
         db.add(user)
         await db.flush()  # Flush to get user.id
+        
+        # Create patient data (PII + Persona)
+        try:
+            await PatientService.create_patient_data(
+                db=db,
+                user_id=str(user.id),
+                full_name=full_name,
+                email=email,
+                phone_number=phone_number,
+                gender=gender,
+                blood_group=blood_group,
+                height_cm=height_cm,
+                weight_kg=weight_kg,
+                current_location=current_location,
+                birth_place=birth_place,
+                nationality=nationality,
+                date_of_birth=date_of_birth,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        except Exception as e:
+            # Rollback user creation if patient data creation fails
+            await db.rollback()
+            raise ValueError(f"Failed to create patient data: {str(e)}")
         
         # Assign default 'user' role
         role_result = await db.execute(select(Role).where(Role.name == "user"))
@@ -90,16 +127,14 @@ class AuthService:
                 raise ValueError("Free package not found. Please run seed_packages.py")
             
             # Create subscription with 7-day paid trial
-            # During trial: user gets paid tier limits (20 uploads/day)
-            # After trial: reverts to Free package limits (2 uploads/day)
             trial_end_date = datetime.now(timezone.utc) + timedelta(days=7)
             
             subscription = Subscription(
                 user_id=user.id,
-                package_id=free_package.id,  # Assigned to Free package
-                plan_type="paid",  # Paid trial for 7 days
+                package_id=free_package.id,
+                plan_type="paid",
                 status="active",
-                end_date=trial_end_date  # Trial expires after 7 days
+                end_date=trial_end_date
             )
             db.add(subscription)
         
@@ -124,7 +159,7 @@ class AuthService:
             "email": user.email
         })
         
-        # Get subscription info with package details
+        # Get subscription info
         subscription = await db.execute(
             select(Subscription).where(
                 and_(
@@ -135,15 +170,23 @@ class AuthService:
         )
         active_subscription = subscription.scalar_one_or_none()
         
+        # Get patient profile
+        patient_profile = await PatientService.get_patient_profile(
+            db=db,
+            user_id=str(user.id),
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
         # Build subscription response
         subscription_info = {
-            "is_paid": True,  # 7-day paid trial
+            "is_paid": True,
             "type": "paid",
             "status": "active",
             "trial_ends_at": active_subscription.end_date.isoformat() if active_subscription and active_subscription.end_date else None,
             "package": {
                 "name": active_subscription.package.name if active_subscription and active_subscription.package else "Free",
-                "daily_upload_limit": 20,  # During trial, paid limits apply
+                "daily_upload_limit": 20,
                 "daily_nutrition_limit": 20
             }
         }
@@ -152,15 +195,10 @@ class AuthService:
             "user": {
                 "id": str(user.id),
                 "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
-                "gender": user.gender,
-                "weight": float(user.weight) if user.weight else None,
-                "height": float(user.height) if user.height else None,
                 "is_active": user.is_active,
                 "roles": [ur.role.name for ur in user.user_roles],
-                "subscription": subscription_info
+                "subscription": subscription_info,
+                "patient": patient_profile
             },
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -171,7 +209,9 @@ class AuthService:
     async def authenticate_user(
         db: AsyncSession,
         email: str,
-        password: str
+        password: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Authenticate a user and return tokens.
@@ -180,6 +220,8 @@ class AuthService:
             db: Database session
             email: User email
             password: Plain text password
+            ip_address: Request IP for audit
+            user_agent: Request user agent for audit
             
         Returns:
             Dict with user info and tokens
@@ -231,6 +273,14 @@ class AuthService:
         )
         active_subscription = subscription.scalar_one_or_none()
         
+        # Get patient profile
+        patient_profile = await PatientService.get_patient_profile(
+            db=db,
+            user_id=str(user.id),
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
         # Determine subscription status
         is_paid = False
         subscription_type = "free"
@@ -245,19 +295,14 @@ class AuthService:
             "user": {
                 "id": str(user.id),
                 "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
-                "gender": user.gender,
-                "weight": float(user.weight) if user.weight else None,
-                "height": float(user.height) if user.height else None,
                 "is_active": user.is_active,
                 "roles": [ur.role.name for ur in user.user_roles],
                 "subscription": {
                     "is_paid": is_paid,
                     "type": subscription_type,
                     "status": subscription_status
-                }
+                },
+                "patient": patient_profile
             },
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -386,24 +431,39 @@ class AuthService:
     @staticmethod
     async def delete_user_account(
         db: AsyncSession,
-        user: User
+        user: User,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
     ) -> bool:
         """
-        Soft delete user account (GDPR compliance).
+        Delete user account with HIPAA-compliant data handling.
+        - Deletes PII (CASCADE)
+        - Anonymizes Persona (sets user_id to NULL)
+        - Soft deletes User record
         
         Args:
             db: Database session
             user: User to delete
+            ip_address: Request IP for audit
+            user_agent: Request user agent for audit
             
         Returns:
             True if successful
         """
-        # Soft delete
+        # Anonymize patient data (deletes PII, anonymizes Persona)
+        await PatientService.anonymize_patient_data(
+            db=db,
+            user_id=str(user.id),
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
+        # Soft delete user
         user.deleted_at = datetime.now(timezone.utc)
         user.is_active = False
         
         await db.commit()
         
-        logger.info("User account deleted (soft delete)", user_id=str(user.id))
+        logger.info("User account deleted (HIPAA-compliant)", user_id=str(user.id))
         
         return True
