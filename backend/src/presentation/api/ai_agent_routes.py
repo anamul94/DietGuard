@@ -22,6 +22,7 @@ from ...application.services.token_usage_service import TokenUsageService
 from ...infrastructure.utils.logger import logger
 from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
 from ...infrastructure.agents.report_agent import report_agent
+from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent as generate_summary
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
