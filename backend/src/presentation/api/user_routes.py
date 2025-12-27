@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
+from datetime import date
 
 from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User
@@ -17,10 +18,10 @@ router = APIRouter(tags=["Users"])
 class UserProfile(BaseModel):
     id: str
     email: str
-    firstName: str
-    lastName: str
-    age: Optional[int]
-    gender: Optional[str]
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
     isActive: bool
     createdAt: str
 
@@ -34,22 +35,41 @@ class UsageStats(BaseModel):
 class MessageResponse(BaseModel):
     message: str
 
+def calculate_age(date_of_birth: date) -> int:
+    """Calculate age from date of birth"""
+    today = date.today()
+    return today.year - date_of_birth.year - ((today.month, today.day) < (date_of_birth.month, date_of_birth.day))
+
 @router.get("/me", response_model=UserProfile)
 async def get_current_user_profile(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get current user's profile information.
     
     Requires authentication.
     """
+    # Get patient data from related tables
+    from ...application.services.patient_service import PatientService
+    
+    patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+    persona = patient_profile.get("persona", {})
+    pii = patient_profile.get("pii", {})
+    
+    # Parse full name into first and last name
+    full_name = pii.get("full_name", "")
+    name_parts = full_name.split(" ", 1) if full_name else ["", ""]
+    first_name = name_parts[0] if len(name_parts) > 0 else None
+    last_name = name_parts[1] if len(name_parts) > 1 else None
+    
     return {
         "id": str(current_user.id),
         "email": current_user.email,
-        "firstName": current_user.first_name,
-        "lastName": current_user.last_name,
-        "age": current_user.age,
-        "gender": current_user.gender,
+        "firstName": first_name,
+        "lastName": last_name,
+        "age": persona.get("age"),
+        "gender": persona.get("gender"),
         "isActive": current_user.is_active,
         "createdAt": current_user.created_at.isoformat()
     }
@@ -129,19 +149,51 @@ async def update_profile(
     
     Requires authentication.
     """
-    # Update allowed fields
-    allowed_fields = {"firstName", "lastName", "age", "gender"}
+    from ...application.services.patient_service import PatientService
+    from ...infrastructure.database.patient_models import PatientPII, PatientPersona
+    from sqlalchemy import select
+    
+    # Get current patient data
+    patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+    pii = patient_profile.get("pii", {})
+    
     changes = {}
     
-    for field, value in update_data.items():
-        if field in allowed_fields and value is not None:
-            db_field = field[0].lower() + field[1:] if field[0].isupper() else field
-            db_field = db_field.replace("firstName", "first_name").replace("lastName", "last_name")
-            setattr(current_user, db_field, value)
-            changes[field] = value
+    # Handle firstName and lastName updates (update PatientPII)
+    if "firstName" in update_data or "lastName" in update_data:
+        # Get current full name
+        current_full_name = pii.get("full_name", "")
+        name_parts = current_full_name.split(" ", 1) if current_full_name else ["", ""]
+        current_first = name_parts[0] if len(name_parts) > 0 else ""
+        current_last = name_parts[1] if len(name_parts) > 1 else ""
+        
+        # Update with new values
+        new_first = update_data.get("firstName", current_first)
+        new_last = update_data.get("lastName", current_last)
+        new_full_name = f"{new_first} {new_last}".strip()
+        
+        if new_full_name != current_full_name:
+            # Update PatientPII with encrypted full name
+            await PatientService.update_patient_pii(db, str(current_user.id), {"full_name": new_full_name})
+            changes["firstName"] = new_first
+            changes["lastName"] = new_last
     
-    await db.commit()
-    await db.refresh(current_user)
+    # Handle gender and age updates (update PatientPersona)
+    persona_updates = {}
+    if "gender" in update_data and update_data["gender"] is not None:
+        persona_updates["gender"] = update_data["gender"]
+        changes["gender"] = update_data["gender"]
+    
+    if "age" in update_data and update_data["age"] is not None:
+        # Convert age to date_of_birth (approximate)
+        age = update_data["age"]
+        today = date.today()
+        birth_year = today.year - age
+        persona_updates["date_of_birth"] = date(birth_year, 1, 1)  # Approximate to Jan 1
+        changes["age"] = age
+    
+    if persona_updates:
+        await PatientService.update_patient_persona(db, str(current_user.id), persona_updates)
     
     # Log profile update
     await AuditService.log_data_modification(
@@ -157,13 +209,24 @@ async def update_profile(
     
     logger.info("User profile updated", user_id=str(current_user.id), changes=changes)
     
+    # Get updated profile
+    updated_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+    updated_persona = updated_profile.get("persona", {})
+    updated_pii = updated_profile.get("pii", {})
+    
+    # Parse full name
+    full_name = updated_pii.get("full_name", "")
+    name_parts = full_name.split(" ", 1) if full_name else ["", ""]
+    first_name = name_parts[0] if len(name_parts) > 0 else None
+    last_name = name_parts[1] if len(name_parts) > 1 else None
+    
     return {
         "id": str(current_user.id),
         "email": current_user.email,
-        "firstName": current_user.first_name,
-        "lastName": current_user.last_name,
-        "age": current_user.age,
-        "gender": current_user.gender,
+        "firstName": first_name,
+        "lastName": last_name,
+        "age": updated_persona.get("age"),
+        "gender": updated_persona.get("gender"),
         "isActive": current_user.is_active,
         "createdAt": current_user.created_at.isoformat()
     }

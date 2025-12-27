@@ -658,8 +658,9 @@ async def get_nutrition_advice(
     - "150g brown rice with vegetables"
     
     **Returns:**
-    - fooditems (echoed back)
-    - nutrition object with clinically accurate values
+    - food_analysis object containing:
+      - fooditems: List of food items analyzed
+      - nutrition: Clinically accurate nutrition values
     
     **Note:** This endpoint tracks usage but does not count against daily limits.
     """,
@@ -744,8 +745,10 @@ async def calculate_nutrition(
         logger.info(f"Nutrition calculation completed for user {current_user.id}")
         
         return NutritionCalculationResponse(
-            fooditems=nutrition_data.get("fooditems", []),
-            nutrition=nutrition_data.get("nutrition", {})
+            food_analysis={
+                "fooditems": nutrition_data.get("fooditems", []),
+                "nutrition": nutrition_data.get("nutrition", {})
+            }
         )
         
     except HTTPException:
@@ -935,15 +938,20 @@ async def delete_report_data_legacy(user_id: str):
     **Authentication Required:** Yes (JWT Bearer token)
     
     **Query Parameters:**
-    - `start_date`: Filter records from this date (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)
-    - `end_date`: Filter records until this date (ISO format)
-    - `page`: Page number (default: 1)
-    - `page_size`: Items per page (default: 10, max: 100)
+    - `start_date`: Filter records from this date (format: YYYY-MM-DD, example: 2025-12-01)
+    - `end_date`: Filter records until this date (format: YYYY-MM-DD, example: 2025-12-27)
+    - `page`: Page number (default: 1, example: 1)
+    - `page_size`: Items per page (default: 10, max: 100, example: 10)
     
     **Returns:**
     - Paginated list of nutrition analyses
     - Total count and page information
     - Records sorted by newest first
+    
+    **Example Request:**
+    ```
+    GET /api/v1/ai/nutrition-data?start_date=2025-12-01&end_date=2025-12-27&page=1&page_size=10
+    ```
     """,
     responses={
         200: {
@@ -955,10 +963,29 @@ async def delete_report_data_legacy(user_id: str):
     }
 )
 async def get_nutrition_data_paginated(
-    start_date: Optional[str] = Query(None, description="Start date filter (ISO format)"),
-    end_date: Optional[str] = Query(None, description="End date filter (ISO format)"),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(10, ge=1, le=100, description="Items per page (max 100)"),
+    start_date: Optional[str] = Query(
+        None, 
+        description="Start date filter (format: YYYY-MM-DD)",
+        example="2025-12-01"
+    ),
+    end_date: Optional[str] = Query(
+        None, 
+        description="End date filter (format: YYYY-MM-DD)",
+        example="2025-12-27"
+    ),
+    page: int = Query(
+        1, 
+        ge=1, 
+        description="Page number (1-indexed)",
+        example=1
+    ),
+    page_size: int = Query(
+        10, 
+        ge=1, 
+        le=100, 
+        description="Items per page (max 100)",
+        example=10
+    ),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -969,26 +996,28 @@ async def get_nutrition_data_paginated(
     try:
         from datetime import datetime
         
-        # Validate and parse dates
+        # Validate and parse dates (accept YYYY-MM-DD format)
         start_datetime = None
         end_datetime = None
         
         if start_date:
             try:
-                start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                # Parse date string (YYYY-MM-DD) and convert to datetime at start of day
+                start_datetime = datetime.fromisoformat(start_date + "T00:00:00")
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid start_date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)"
+                    detail="Invalid start_date format. Use YYYY-MM-DD format (e.g., 2025-12-01)"
                 )
         
         if end_date:
             try:
-                end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                # Parse date string (YYYY-MM-DD) and convert to datetime at end of day
+                end_datetime = datetime.fromisoformat(end_date + "T23:59:59")
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid end_date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)"
+                    detail="Invalid end_date format. Use YYYY-MM-DD format (e.g., 2025-12-27)"
                 )
         
         logger.info("Fetching paginated nutrition data", 

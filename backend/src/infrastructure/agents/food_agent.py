@@ -7,29 +7,7 @@ from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
 from .agent_response import AgentResponse
-
-
-# Pydantic models for structured output
-class NutritionInfo(BaseModel):
-    """Nutritional information"""
-    calories: int = Field(description="Total calories as integer", ge=0)
-    protein: str = Field(description="Protein content with unit (e.g., '45g')")
-    carbohydrates: str = Field(description="Carbohydrate content with unit (e.g., '12g')")
-    fat: str = Field(description="Fat content with unit (e.g., '48g')")
-    fiber: str = Field(description="Fiber content with unit (e.g., '1g')")
-    sugar: str = Field(description="Sugar content with unit (e.g., '8g')")
-
-
-class FoodAnalysis(BaseModel):
-    """Complete food analysis with items and nutrition"""
-    fooditems: List[str] = Field(
-        description=(
-            "List of all identified food items with detailed descriptions including visible ingredients and preparation methods. "
-            "Examples: 'pizza with cheese and tomato', 'grilled chicken with naan roti', 'caesar salad with croutons and parmesan', "
-            "'fried rice with vegetables and egg', 'chocolate cake with cream frosting'"
-        )
-    )
-    nutrition: NutritionInfo = Field(description="Total nutritional information for all food items combined")
+from ...presentation.schemas.food_schemas import NutritionInfo, FoodAnalysis
 
 
 async def food_agent(data, type, mime_type):

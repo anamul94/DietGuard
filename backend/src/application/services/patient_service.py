@@ -212,6 +212,143 @@ class PatientService:
             "persona": persona_data
         }
     
+    
+    @staticmethod
+    async def update_patient_pii(
+        db: AsyncSession,
+        user_id: str,
+        updates: Dict[str, Any],
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> bool:
+        """
+        Update patient PII fields.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            updates: Dict of fields to update (full_name, email, phone_number)
+            ip_address: IP address for audit
+            user_agent: User agent for audit
+            
+        Returns:
+            True if successful
+        """
+        encryption_service = get_encryption_service()
+        
+        # Get existing PII
+        pii_result = await db.execute(
+            select(PatientPII).where(PatientPII.user_id == user_id)
+        )
+        patient_pii = pii_result.scalar_one_or_none()
+        
+        if not patient_pii:
+            raise ValueError("Patient PII not found")
+        
+        fields_modified = []
+        
+        try:
+            # Update encrypted fields
+            if "full_name" in updates:
+                patient_pii.full_name_encrypted = encryption_service.encrypt(updates["full_name"])
+                fields_modified.append("full_name")
+            
+            if "email" in updates:
+                patient_pii.email_encrypted = encryption_service.encrypt(updates["email"])
+                fields_modified.append("email")
+            
+            if "phone_number" in updates:
+                patient_pii.phone_number_encrypted = encryption_service.encrypt(updates["phone_number"]) if updates["phone_number"] else None
+                fields_modified.append("phone_number")
+            
+            # Log HIPAA audit
+            if fields_modified:
+                await HIPAAAuditService.log_phi_modification(
+                    db=db,
+                    user_id=user_id,
+                    patient_user_id=user_id,
+                    resource="patient_pii",
+                    action="phi_update",
+                    fields_modified=fields_modified,
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
+            
+            await db.commit()
+            logger.info("Patient PII updated", user_id=user_id, fields=fields_modified)
+            
+            return True
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to update patient PII: {str(e)}", user_id=user_id)
+            raise ValueError(f"Failed to update patient PII: {str(e)}")
+    
+    @staticmethod
+    async def update_patient_persona(
+        db: AsyncSession,
+        user_id: str,
+        updates: Dict[str, Any],
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> bool:
+        """
+        Update patient persona fields.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            updates: Dict of fields to update (gender, date_of_birth, height_cm, weight_kg, etc.)
+            ip_address: IP address for audit
+            user_agent: User agent for audit
+            
+        Returns:
+            True if successful
+        """
+        # Get existing persona
+        persona_result = await db.execute(
+            select(PatientPersona).where(PatientPersona.user_id == user_id)
+        )
+        patient_persona = persona_result.scalar_one_or_none()
+        
+        if not patient_persona:
+            raise ValueError("Patient persona not found")
+        
+        fields_modified = []
+        
+        try:
+            # Update allowed fields
+            allowed_fields = ["gender", "date_of_birth", "blood_group", "height_cm", "weight_kg", 
+                            "current_location", "birth_place", "nationality"]
+            
+            for field, value in updates.items():
+                if field in allowed_fields:
+                    setattr(patient_persona, field, value)
+                    fields_modified.append(field)
+            
+            # Log HIPAA audit
+            if fields_modified:
+                await HIPAAAuditService.log_phi_modification(
+                    db=db,
+                    user_id=user_id,
+                    patient_user_id=user_id,
+                    resource="patient_persona",
+                    action="phi_update",
+                    fields_modified=fields_modified,
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
+            
+            await db.commit()
+            logger.info("Patient persona updated", user_id=user_id, fields=fields_modified)
+            
+            return True
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to update patient persona: {str(e)}", user_id=user_id)
+            raise ValueError(f"Failed to update patient persona: {str(e)}")
+    
     @staticmethod
     async def anonymize_patient_data(
         db: AsyncSession,

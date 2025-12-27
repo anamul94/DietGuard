@@ -125,14 +125,21 @@ class PostgresClient:
                 # Build base query
                 query = select(NutritionData).where(NutritionData.user_id == user_id)
                 
-                # Add date filters if provided
+                # Add date filters if provided (filter by meal_date, not created_at)
                 if start_date:
-                    query = query.where(NutritionData.created_at >= start_date)
+                    # Convert datetime to date for comparison with meal_date
+                    query = query.where(NutritionData.meal_date >= start_date.date())
                 if end_date:
-                    query = query.where(NutritionData.created_at <= end_date)
+                    # Convert datetime to date for comparison with meal_date
+                    query = query.where(NutritionData.meal_date <= end_date.date())
                 
-                # Order by created_at descending (newest first)
-                query = query.order_by(NutritionData.created_at.desc())
+                # Order by meal_date and meal_time descending (newest first)
+                # Fall back to created_at for records without meal_date
+                query = query.order_by(
+                    NutritionData.meal_date.desc().nulls_last(),
+                    NutritionData.meal_time.desc().nulls_last(),
+                    NutritionData.created_at.desc()
+                )
                 
                 # Get total count
                 from sqlalchemy import func as sql_func
@@ -157,6 +164,8 @@ class PostgresClient:
                     items.append({
                         "id": record.id,
                         "created_at": record.created_at.isoformat(),
+                        "meal_date": record.meal_date.isoformat() if record.meal_date else None,
+                        "meal_time": record.meal_time.isoformat() if record.meal_time else None,
                         "data": json.loads(record.data)
                     })
                 
