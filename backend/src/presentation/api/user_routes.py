@@ -18,8 +18,7 @@ router = APIRouter(tags=["Users"])
 class UserProfile(BaseModel):
     id: str
     email: str
-    firstName: Optional[str] = None
-    lastName: Optional[str] = None
+    fullName: Optional[str] = None
     phoneNumber: Optional[str] = None
     age: Optional[int] = None
     gender: Optional[str] = None
@@ -65,17 +64,10 @@ async def get_current_user_profile(
     persona = patient_profile.get("persona", {})
     pii = patient_profile.get("pii", {})
     
-    # Parse full name into first and last name
-    full_name = pii.get("full_name", "")
-    name_parts = full_name.split(" ", 1) if full_name else ["", ""]
-    first_name = name_parts[0] if len(name_parts) > 0 else None
-    last_name = name_parts[1] if len(name_parts) > 1 else None
-    
     return {
         "id": str(current_user.id),
         "email": current_user.email,
-        "firstName": first_name,
-        "lastName": last_name,
+        "fullName": pii.get("full_name", ""),
         "phoneNumber": pii.get("phone_number"),
         "age": persona.get("age"),
         "gender": persona.get("gender"),
@@ -158,7 +150,7 @@ async def update_profile(
     Update current user's profile.
     
     Allowed fields:
-    - firstName, lastName, phoneNumber (PII - encrypted)
+    - fullName, phoneNumber (PII - encrypted)
     - gender, bloodGroup, heightCm, weightKg, currentLocation, birthPlace, nationality, dateOfBirth (Persona)
     
     NOT allowed:
@@ -176,25 +168,12 @@ async def update_profile(
     
     changes = {}
     
-    # Handle PII updates (firstName, lastName, phoneNumber)
+    # Handle PII updates (fullName, phoneNumber)
     pii_updates = {}
     
-    if "firstName" in update_data or "lastName" in update_data:
-        # Get current full name
-        current_full_name = pii.get("full_name", "")
-        name_parts = current_full_name.split(" ", 1) if current_full_name else ["", ""]
-        current_first = name_parts[0] if len(name_parts) > 0 else ""
-        current_last = name_parts[1] if len(name_parts) > 1 else ""
-        
-        # Update with new values
-        new_first = update_data.get("firstName", current_first)
-        new_last = update_data.get("lastName", current_last)
-        new_full_name = f"{new_first} {new_last}".strip()
-        
-        if new_full_name != current_full_name:
-            pii_updates["full_name"] = new_full_name
-            changes["firstName"] = new_first
-            changes["lastName"] = new_last
+    if "fullName" in update_data and update_data["fullName"] is not None:
+        pii_updates["full_name"] = update_data["fullName"]
+        changes["fullName"] = update_data["fullName"]
     
     if "phoneNumber" in update_data:
         pii_updates["phone_number"] = update_data["phoneNumber"]
@@ -284,17 +263,10 @@ async def update_profile(
     updated_persona = updated_profile.get("persona", {})
     updated_pii = updated_profile.get("pii", {})
     
-    # Parse full name
-    full_name = updated_pii.get("full_name", "")
-    name_parts = full_name.split(" ", 1) if full_name else ["", ""]
-    first_name = name_parts[0] if len(name_parts) > 0 else None
-    last_name = name_parts[1] if len(name_parts) > 1 else None
-    
     return {
         "id": str(current_user.id),
         "email": current_user.email,
-        "firstName": first_name,
-        "lastName": last_name,
+        "fullName": updated_pii.get("full_name", ""),
         "phoneNumber": updated_pii.get("phone_number"),
         "age": updated_persona.get("age"),
         "gender": updated_persona.get("gender"),
