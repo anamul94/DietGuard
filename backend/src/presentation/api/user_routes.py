@@ -20,8 +20,16 @@ class UserProfile(BaseModel):
     email: str
     firstName: Optional[str] = None
     lastName: Optional[str] = None
+    phoneNumber: Optional[str] = None
     age: Optional[int] = None
     gender: Optional[str] = None
+    bloodGroup: Optional[str] = None
+    heightCm: Optional[float] = None
+    weightKg: Optional[float] = None
+    currentLocation: Optional[str] = None
+    birthPlace: Optional[str] = None
+    nationality: Optional[str] = None
+    dateOfBirth: Optional[str] = None
     isActive: bool
     createdAt: str
 
@@ -68,8 +76,16 @@ async def get_current_user_profile(
         "email": current_user.email,
         "firstName": first_name,
         "lastName": last_name,
+        "phoneNumber": pii.get("phone_number"),
         "age": persona.get("age"),
         "gender": persona.get("gender"),
+        "bloodGroup": persona.get("blood_group"),
+        "heightCm": persona.get("height_cm"),
+        "weightKg": persona.get("weight_kg"),
+        "currentLocation": persona.get("current_location"),
+        "birthPlace": persona.get("birth_place"),
+        "nationality": persona.get("nationality"),
+        "dateOfBirth": persona.get("date_of_birth"),
         "isActive": current_user.is_active,
         "createdAt": current_user.created_at.isoformat()
     }
@@ -142,10 +158,11 @@ async def update_profile(
     Update current user's profile.
     
     Allowed fields:
-    - firstName
-    - lastName
-    - age
-    - gender
+    - firstName, lastName, phoneNumber (PII - encrypted)
+    - gender, bloodGroup, heightCm, weightKg, currentLocation, birthPlace, nationality, dateOfBirth (Persona)
+    
+    NOT allowed:
+    - email (cannot be changed for security reasons)
     
     Requires authentication.
     """
@@ -159,7 +176,9 @@ async def update_profile(
     
     changes = {}
     
-    # Handle firstName and lastName updates (update PatientPII)
+    # Handle PII updates (firstName, lastName, phoneNumber)
+    pii_updates = {}
+    
     if "firstName" in update_data or "lastName" in update_data:
         # Get current full name
         current_full_name = pii.get("full_name", "")
@@ -173,27 +192,78 @@ async def update_profile(
         new_full_name = f"{new_first} {new_last}".strip()
         
         if new_full_name != current_full_name:
-            # Update PatientPII with encrypted full name
-            await PatientService.update_patient_pii(db, str(current_user.id), {"full_name": new_full_name})
+            pii_updates["full_name"] = new_full_name
             changes["firstName"] = new_first
             changes["lastName"] = new_last
     
-    # Handle gender and age updates (update PatientPersona)
+    if "phoneNumber" in update_data:
+        pii_updates["phone_number"] = update_data["phoneNumber"]
+        changes["phoneNumber"] = update_data["phoneNumber"]
+    
+    # Update PII if there are changes
+    if pii_updates:
+        await PatientService.update_patient_pii(
+            db, 
+            str(current_user.id), 
+            pii_updates,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+    
+    # Handle Persona updates (gender, blood_group, height, weight, location, etc.)
     persona_updates = {}
+    
     if "gender" in update_data and update_data["gender"] is not None:
         persona_updates["gender"] = update_data["gender"]
         changes["gender"] = update_data["gender"]
     
-    if "age" in update_data and update_data["age"] is not None:
-        # Convert age to date_of_birth (approximate)
-        age = update_data["age"]
-        today = date.today()
-        birth_year = today.year - age
-        persona_updates["date_of_birth"] = date(birth_year, 1, 1)  # Approximate to Jan 1
-        changes["age"] = age
+    if "bloodGroup" in update_data and update_data["bloodGroup"] is not None:
+        persona_updates["blood_group"] = update_data["bloodGroup"]
+        changes["bloodGroup"] = update_data["bloodGroup"]
     
+    if "heightCm" in update_data and update_data["heightCm"] is not None:
+        persona_updates["height_cm"] = update_data["heightCm"]
+        changes["heightCm"] = update_data["heightCm"]
+    
+    if "weightKg" in update_data and update_data["weightKg"] is not None:
+        persona_updates["weight_kg"] = update_data["weightKg"]
+        changes["weightKg"] = update_data["weightKg"]
+    
+    if "currentLocation" in update_data and update_data["currentLocation"] is not None:
+        persona_updates["current_location"] = update_data["currentLocation"]
+        changes["currentLocation"] = update_data["currentLocation"]
+    
+    if "birthPlace" in update_data and update_data["birthPlace"] is not None:
+        persona_updates["birth_place"] = update_data["birthPlace"]
+        changes["birthPlace"] = update_data["birthPlace"]
+    
+    if "nationality" in update_data and update_data["nationality"] is not None:
+        persona_updates["nationality"] = update_data["nationality"]
+        changes["nationality"] = update_data["nationality"]
+    
+    if "dateOfBirth" in update_data and update_data["dateOfBirth"] is not None:
+        # Parse date string to date object
+        from datetime import datetime
+        dob_str = update_data["dateOfBirth"]
+        try:
+            dob = datetime.fromisoformat(dob_str.replace('Z', '+00:00')).date()
+            persona_updates["date_of_birth"] = dob
+            changes["dateOfBirth"] = dob_str
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dateOfBirth format. Use ISO format (YYYY-MM-DD)"
+            )
+    
+    # Update Persona if there are changes
     if persona_updates:
-        await PatientService.update_patient_persona(db, str(current_user.id), persona_updates)
+        await PatientService.update_patient_persona(
+            db, 
+            str(current_user.id), 
+            persona_updates,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
     
     # Log profile update
     await AuditService.log_data_modification(
@@ -225,8 +295,16 @@ async def update_profile(
         "email": current_user.email,
         "firstName": first_name,
         "lastName": last_name,
+        "phoneNumber": updated_pii.get("phone_number"),
         "age": updated_persona.get("age"),
         "gender": updated_persona.get("gender"),
+        "bloodGroup": updated_persona.get("blood_group"),
+        "heightCm": updated_persona.get("height_cm"),
+        "weightKg": updated_persona.get("weight_kg"),
+        "currentLocation": updated_persona.get("current_location"),
+        "birthPlace": updated_persona.get("birth_place"),
+        "nationality": updated_persona.get("nationality"),
+        "dateOfBirth": updated_persona.get("date_of_birth"),
         "isActive": current_user.is_active,
         "createdAt": current_user.created_at.isoformat()
     }

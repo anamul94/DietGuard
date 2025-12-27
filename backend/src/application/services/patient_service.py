@@ -227,7 +227,8 @@ class PatientService:
         Args:
             db: Database session
             user_id: User ID
-            updates: Dict of fields to update (full_name, email, phone_number)
+            updates: Dict of fields to update (full_name, phone_number)
+                    NOTE: email cannot be updated for security reasons
             ip_address: IP address for audit
             user_agent: User agent for audit
             
@@ -248,14 +249,10 @@ class PatientService:
         fields_modified = []
         
         try:
-            # Update encrypted fields
+            # Update encrypted fields (email is NOT allowed to be updated)
             if "full_name" in updates:
                 patient_pii.full_name_encrypted = encryption_service.encrypt(updates["full_name"])
                 fields_modified.append("full_name")
-            
-            if "email" in updates:
-                patient_pii.email_encrypted = encryption_service.encrypt(updates["email"])
-                fields_modified.append("email")
             
             if "phone_number" in updates:
                 patient_pii.phone_number_encrypted = encryption_service.encrypt(updates["phone_number"]) if updates["phone_number"] else None
