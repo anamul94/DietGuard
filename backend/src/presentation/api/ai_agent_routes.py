@@ -695,16 +695,22 @@ async def calculate_nutrition(
         
         # If not provided in request, try to fetch from database
         if not old_food_analysis:
-            postgres_client = PostgresClient()
-            existing_data = await postgres_client.get_nutrition_data(str(current_user.id))
-            
-            if existing_data:
-                data_content = existing_data.get("data", {})
-                # Extract old food analysis if available
-                if "food_analysis" in data_content:
-                    old_food_analysis = data_content.get("food_analysis")
-                    logger.info("Using old food analysis from database as reference", 
-                               user_id=str(current_user.id))
+            try:
+                postgres_client = PostgresClient()
+                existing_data = await postgres_client.get_nutrition_data(str(current_user.id))
+                
+                if existing_data:
+                    data_content = existing_data.get("data", {})
+                    # Extract old food analysis if available
+                    if "food_analysis" in data_content:
+                        old_food_analysis = data_content.get("food_analysis")
+                        logger.info("Using old food analysis from database as reference", 
+                                   user_id=str(current_user.id))
+            except Exception as e:
+                # If DB fetch fails (e.g., multiple rows), continue without reference
+                logger.warning("Failed to fetch old food analysis from database, continuing without reference", 
+                             user_id=str(current_user.id), error=str(e))
+                old_food_analysis = None
         
         # Call nutrition calculator agent with optional reference data
         nutrition_response = await nutrition_calculator_agent(
@@ -734,43 +740,6 @@ async def calculate_nutrition(
                 cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
                 cache_read_tokens=metadata.get("cache_read_tokens", 0)
             )
-        
-        # Check if there's existing nutrition data from food upload (not nutrition advice)
-        postgres_client = PostgresClient()
-        existing_data = await postgres_client.get_nutrition_data(str(current_user.id))
-        
-        # Update database only if data exists and was saved from food upload
-        # (i.e., doesn't have nutritionist_recommendations field)
-        if existing_data:
-            data_content = existing_data.get("data", {})
-            # Check if this was from food upload (has food_analysis but no nutritionist_recommendations)
-            if "food_analysis" in data_content and "nutritionist_recommendations" not in data_content:
-                logger.info("Updating existing nutrition data from food upload", 
-                           user_id=str(current_user.id))
-                
-                from datetime import datetime, timezone
-                
-                # Update the food_analysis with new nutrition values
-                updated_data = {
-                    "food_analysis": {
-                        "fooditems": nutrition_data.get("fooditems", []),
-                        "nutrition": nutrition_data.get("nutrition", {})
-                    },
-                    "meal_type": data_content.get("meal_type"),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "updated_via_calculator": True
-                }
-                
-                await postgres_client.save_nutrition_data(
-                    user_id=str(current_user.id),
-                    data=updated_data
-                )
-                logger.info("Nutrition data updated successfully", user_id=str(current_user.id))
-            else:
-                logger.info("Skipping database update - data is from nutrition advice", 
-                           user_id=str(current_user.id))
-        else:
-            logger.info("No existing nutrition data to update", user_id=str(current_user.id))
         
         logger.info(f"Nutrition calculation completed for user {current_user.id}")
         

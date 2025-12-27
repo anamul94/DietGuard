@@ -75,11 +75,13 @@ class PostgresClient:
         try:
             logger.debug("Retrieving nutrition data", user_id=user_id)
             async with AsyncSessionLocal() as session:
-                # Get data (no expiration check)
+                # Get most recent nutrition data (ordered by created_at descending)
                 result = await session.execute(
-                    select(NutritionData).where(NutritionData.user_id == user_id)
+                    select(NutritionData)
+                    .where(NutritionData.user_id == user_id)
+                    .order_by(NutritionData.created_at.desc())
                 )
-                nutrition = result.scalar_one_or_none()
+                nutrition = result.scalars().first()
                 
                 if nutrition:
                     logger.info("Nutrition data retrieved successfully", user_id=user_id)
