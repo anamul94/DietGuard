@@ -123,7 +123,25 @@ async def upload_food(
         type_list = ["image"] * len(encoded_images)
         mime_list = [img["mime_type"] for img in encoded_images]
         
-        food_analysis_response = await food_agent(data_list, type_list, mime_list)
+        # Fetch user's location from patient profile for regional food context
+        from ...application.services.patient_service import PatientService
+        user_location = None
+        try:
+            patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+            persona_data = patient_profile.get("persona", {})
+            user_location = persona_data.get("current_location")
+            if user_location:
+                logger.info("Using user location for food analysis", 
+                           user_id=str(current_user.id), 
+                           location=user_location)
+        except Exception as e:
+            # If location fetch fails, continue without it
+            logger.warning("Failed to fetch user location, continuing without location context", 
+                          user_id=str(current_user.id), 
+                          error=str(e))
+        
+        food_analysis_response = await food_agent(data_list, type_list, mime_list, location=user_location)
+
         
         # Check if food analysis failed
         if not food_analysis_response.success:

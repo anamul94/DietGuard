@@ -10,7 +10,7 @@ from .agent_response import AgentResponse
 from ...presentation.schemas.food_schemas import NutritionInfo, FoodAnalysis
 
 
-async def food_agent(data, type, mime_type):
+async def food_agent(data, type, mime_type, location=None):
     """
     Analyze food images and return structured nutritional data.
     
@@ -18,6 +18,7 @@ async def food_agent(data, type, mime_type):
         data: base64-encoded string OR list of base64 strings for multiple images
         type: "image" OR list of "image" for multiple images
         mime_type: e.g. "image/jpeg" OR list of mime types for multiple images
+        location: Optional user location (e.g., "Mumbai, India") for regional food context
         
     Returns:
         AgentResponse with structured FoodAnalysis data
@@ -51,22 +52,34 @@ async def food_agent(data, type, mime_type):
         logger.error("Food agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
+    # Build location context if available
+    location_context = ""
+    if location:
+        location_context = (
+            f"\n\n**USER LOCATION CONTEXT:**"
+            f"\nThe user is located in {location}. Consider local and street food common in this region when identifying items. "
+            f"Be aware of regional specialties, traditional dishes, and popular street food from this area."
+        )
+    
     system_message = {
         "role": "system",
         "content": (
             "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
             "Your task is to professionally identify and analyze ALL food items in images with detailed descriptions. "
+            f"{location_context}"
             "\n\nIMPORTANT INSTRUCTIONS:"
-            "\n1. Identify EVERY food item visible in the image(s)"
-            "\n2. For each food item, provide a DETAILED description that includes:"
+            "\n1. Identify ONLY EDIBLE FOOD ITEMS visible in the image(s)"
+            "\n2. **EXCLUDE ALL NON-FOOD ITEMS:** Do NOT include cooking equipment (charcoal, grills, stoves), "
+            "utensils (plates, bowls, forks, spoons, knives), serving ware, napkins, decorations, or any other non-edible items"
+            "\n3. For each food item, provide a DETAILED description that includes:"
             "\n   - The main food item name"
             "\n   - Visible ingredients, toppings, or components"
             "\n   - Preparation method if identifiable (grilled, fried, boiled, baked, etc.)"
             "\n   - Examples: 'pizza with cheese and tomato', 'grilled chicken with naan roti', "
-            "'caesar salad with croutons and parmesan cheese', 'fried rice with vegetables and egg'"
-            "\n3. Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements"
-            "\n4. Provide accurate nutritional estimates for the TOTAL meal (sum of all items)"
-            "\n5. Be objective and precise — do not speculate or include unnecessary commentary"
+            "'caesar salad with croutons and parmesan cheese', 'fried rice with vegetables and egg', 'seekh kabab'"
+            "\n4. Focus exclusively on EDIBLE food items — ignore people, utensils, backgrounds, cooking equipment, or any non-food elements"
+            "\n5. Provide accurate nutritional estimates for the TOTAL meal (sum of all items)"
+            "\n6. Be objective and precise — do not speculate or include unnecessary commentary"
         ),
     }
 
@@ -121,8 +134,8 @@ async def food_agent(data, type, mime_type):
         print("=" * 50)
         print("FOOD AGENT METADATA")
         print("=" * 50)
-        print(f"Response Metadata: {meta}")
-        print(f"Usage Metadata: {usage}")
+        # print(f"Response Metadata: {meta}")
+        # print(f"Usage Metadata: {usage}")
         print("=" * 50)
         
         # Convert Pydantic model to dict for AgentResponse

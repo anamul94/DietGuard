@@ -155,9 +155,9 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
         print("=" * 50)
         print("NUTRITION CALCULATOR AGENT METADATA")
         print("=" * 50)
-        print(f"Response Metadata: {meta}")
-        print(f"Usage Metadata: {usage}")
-        print("=" * 50)
+        # print(f"Response Metadata: {meta}")
+        # print(f"Usage Metadata: {usage}")
+        # print("=" * 50)
         
         # Convert Pydantic model to dict for AgentResponse
         structured_data = parsed.model_dump()

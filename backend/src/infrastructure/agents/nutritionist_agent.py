@@ -125,9 +125,9 @@ async def nutritionist_agent(
         print("=" * 50)
         print("NUTRITIONIST AGENT METADATA")
         print("=" * 50)
-        print(f"Response Metadata: {meta}")
-        print(f"Usage Metadata: {usage}")
-        print("=" * 50)
+        # print(f"Response Metadata: {meta}")
+        # print(f"Usage Metadata: {usage}")
+        # print("=" * 50)
         
         # Prepare metadata for token tracking
         metadata = {
