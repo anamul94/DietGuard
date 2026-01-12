@@ -90,3 +90,63 @@ class RedisClient:
         except Exception as e:
             logging.error(f"Redis save nutrition failed for key {key}: {e}")
             return False
+    
+    def save_chat_session(self, user_email: str, session_data: Dict[str, Any]) -> bool:
+        """Save chat session data with 7 days expiration"""
+        try:
+            key = self._generate_key(user_email, "chat")
+            data_with_timestamp = {
+                "data": session_data,
+                "timestamp": datetime.now().isoformat(),
+                "expires_at": (datetime.now() + timedelta(days=7)).isoformat()
+            }
+            # Set with 7 days expiration (604800 seconds)
+            result = self.redis_client.setex(key, 604800, json.dumps(data_with_timestamp))
+            logging.info(f"Redis save chat session result for key {key}: {result}")
+            return result
+        except Exception as e:
+            logging.error(f"Redis save chat session failed for key {key}: {e}")
+            return False
+    
+    def get_chat_session(self, user_email: str) -> Optional[Dict[str, Any]]:
+        """Get chat session data if not expired"""
+        try:
+            key = self._generate_key(user_email, "chat")
+            data = self.redis_client.get(key)
+            logging.info(f"Redis get chat session result for key {key}: {'Found' if data else 'Not found'}")
+            if data:
+                return json.loads(data)
+            return None
+        except Exception as e:
+            logging.error(f"Redis get chat session failed for key {key}: {e}")
+            return None
+    
+    def delete_chat_session(self, user_email: str) -> bool:
+        """Delete chat session data for user"""
+        try:
+            key = self._generate_key(user_email, "chat")
+            result = self.redis_client.delete(key)
+            logging.info(f"Redis delete chat session result for key {key}: {result}")
+            return bool(result)
+        except Exception as e:
+            logging.error(f"Redis delete chat session failed for key {key}: {e}")
+    def delete_nutrition_data(self, user_id: str) -> bool:
+        """Delete nutrition data for user"""
+        try:
+            key = self._generate_key(user_id, "nutrition")
+            result = self.redis_client.delete(key)
+            logging.info(f"Redis delete nutrition result for key {key}: {result}")
+            return bool(result)
+        except Exception as e:
+            logging.error(f"Redis delete nutrition failed for key {key}: {e}")
+            return False
+
+    def delete_all_user_data(self, user_id: str) -> Dict[str, bool]:
+        """Delete all data associated with a user"""
+        results = {
+            "report": self.delete_report_data(user_id),
+            "nutrition": self.delete_nutrition_data(user_id),
+            "chat": self.delete_chat_session(user_id)
+        }
+        logging.info(f"Deleted all data for user {user_id}: {results}")
+        return results

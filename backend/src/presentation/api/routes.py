@@ -10,8 +10,10 @@ from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent
 from ...infrastructure.utils.redis_utils import RedisClient
 # from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
+from .chatbot_routes import router as chatbot_router
 
 import json
+import logging
 
 # Create FastAPI app first
 app = FastAPI()
@@ -30,6 +32,9 @@ sio = socketio.AsyncServer(
     cors_allowed_origins="*",
     async_mode='asgi'
 )
+
+# Include chatbot routes
+app.include_router(chatbot_router, prefix="/api", tags=["chatbot"])
 
 @app.get("/")
 async def read_root():
@@ -209,6 +214,8 @@ async def upload_report(
         }
 
     try:
+        logging.info(f"📤 Upload request received for {mobile_or_email} with {len(files)} file(s)")
+        
         # Process all files in parallel
         responses = await asyncio.gather(*[process_file(file) for file in files])
 
@@ -223,12 +230,15 @@ async def upload_report(
         }
 
         # Save to Redis with 12 hours expiration
+        logging.info(f"💾 Saving report data to Redis for {mobile_or_email}")
         redis_client = RedisClient()
-        redis_client.save_report_data(mobile_or_email, result_data)
+        save_result = redis_client.save_report_data(mobile_or_email, result_data)
+        logging.info(f"✅ Redis save result: {save_result}")
 
         return result_data
 
     except Exception as e:
+        logging.error(f"❌ Error processing files: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
 
@@ -244,3 +254,27 @@ async def get_nutrition(user_id: str):
         )
 
     return data
+
+
+@app.delete("/delete_nutrition/{user_id}")
+async def delete_nutrition(user_id: str):
+    """Delete saved nutrition data for user"""
+    redis_client = RedisClient()
+    success = redis_client.delete_nutrition_data(user_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="No nutrition data found to delete")
+    
+    return {"message": f"Nutrition data deleted for user: {user_id}"}
+
+
+@app.delete("/delete_all_data/{user_id}")
+async def delete_all_data(user_id: str):
+    """Delete all data associated with user (report, nutrition, chat)"""
+    redis_client = RedisClient()
+    results = redis_client.delete_all_user_data(user_id)
+    
+    return {
+        "message": f"All data deletion process completed for user: {user_id}",
+        "details": results
+    }

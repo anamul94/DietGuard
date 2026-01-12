@@ -20,12 +20,20 @@ const Header: React.FC = () => {
           </div>
           <div className="flex items-center space-x-6">
             <Link
+              to="/settings"
+              className="flex items-center space-x-2 text-medical-600 hover:text-medical-800 transition-colors"
+              title="Manage Data & Settings"
+            >
+              <Activity className="h-5 w-5" />
+              <span className="text-sm font-medium">Settings</span>
+            </Link>
+            <Link
               to="/markdown-test"
               className="flex items-center space-x-2 text-medical-600 hover:text-medical-800 transition-colors"
               title="View Markdown Rendering Test"
             >
               <FileText className="h-5 w-5" />
-              <span className="text-sm font-medium">Test Markdown</span>
+              <span className="text-sm font-medium">Test</span>
             </Link>
             <div className="flex items-center space-x-2">
               <Activity className="h-5 w-5 text-medical-600" />

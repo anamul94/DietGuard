@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.117.1",
     "langchain>=0.3.27",
     "langchain-aws>=0.2.33",
+    "langchain-community>=0.3.0",
     "langfuse>=3.5.0",
     "langgraph>=0.6.7",
     "pillow>=11.3.0",
@@ -18,4 +19,6 @@ dependencies = [
 
     "httpx>=0.25.2",
     "python-socketio==5.10.0",
+    "email-validator>=2.1.0",
+    "xmltodict>=0.13.0",
 ]
