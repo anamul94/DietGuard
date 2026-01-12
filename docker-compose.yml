@@ -34,6 +34,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=http://15.207.68.194:8010
+        - REACT_APP_DOMAIN=15.207.68.194:3003
     container_name: dietguard-frontend
     ports:
       - "3003:3000"
