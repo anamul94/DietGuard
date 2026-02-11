@@ -14,6 +14,7 @@ from ..schemas.food_schemas import FoodUploadResponse, FoodAnalysis
 from ..schemas.nutrition_schemas import NutritionAdviceRequest, NutritionAdviceResponse
 from ..schemas.ai_schemas import ReportUploadResponse, ErrorResponse, SubscriptionLimitError
 from ..schemas.nutrition_calculator_schemas import NutritionCalculationRequest, NutritionCalculationResponse
+from ..schemas.ingredient_schemas import IngredientScanResponse
 from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User
 from ...infrastructure.auth.dependencies import get_current_active_user
@@ -27,7 +28,9 @@ from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent as generate_summary
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
 from ...infrastructure.agents.report_merge_agent import report_merge_agent  # NEW
+from ...infrastructure.agents.ingredient_scanner_agent import ingredient_scanner_agent
 from ...infrastructure.database.postgres_client import PostgresClient
+
 
 router = APIRouter(tags=["AI Agents"])
 
@@ -189,6 +192,150 @@ async def upload_food(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process food images. Please try again later."
+        )
+
+
+@router.post(
+    "/scan-ingredients",
+    response_model=IngredientScanResponse,
+    summary="Scan Food Packaging Ingredients",
+    description="""
+    Upload food packaging images to scan and analyze ingredient lists.
+    
+    **Authentication Required:** Yes (JWT Bearer token)
+    
+    **Subscription Limits:**
+    - Free: 2 scans/day
+    - Trial: 20 scans/day
+    - Paid: 20 scans/day
+    
+    **Supported Formats:** JPG, JPEG, PNG
+    
+    **Process:**
+    1. AI reads ingredient list from packaging image
+    2. Identifies each ingredient (including chemical names)
+    3. Provides health ratings (🟢 Green, 🟡 Yellow, 🔴 Red)
+    4. Explains ingredients in simple language
+    5. Flags allergens, age restrictions, and dietary concerns
+    
+    **Returns:**
+    - user_email
+    - filename
+    - ingredient_analysis with:
+      - List of ingredients with health ratings
+      - Short and detailed explanations
+      - Allergen information
+      - Age restrictions
+      - Dietary compatibility (vegan, halal, kosher, etc.)
+      - Overall product rating
+      - Critical warnings
+    """,
+    responses={
+        200: {
+            "description": "Successful ingredient analysis",
+            "model": IngredientScanResponse
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing JWT token",
+            "model": ErrorResponse
+        },
+        403: {
+            "description": "Forbidden - Daily scan limit reached",
+            "model": SubscriptionLimitError
+        },
+        422: {
+            "description": "Validation Error - Invalid file format"
+        }
+    }
+)
+async def scan_ingredients(
+    file: UploadFile = File(..., description="Food packaging image (JPG, PNG)"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Scan food packaging to extract and analyze ingredient lists.
+    
+    Requires authentication and enforces daily scan limits based on subscription.
+    """
+    try:
+        logger.info(f"Ingredient scan request from user {current_user.id}", filename=file.filename)
+        
+        # Check subscription limits (using upload limit for now)
+        try:
+            limit_check = await SubscriptionService.check_upload_limit(db, current_user)
+            logger.info("Ingredient scan limit check passed", user_id=str(current_user.id), 
+                       remaining=limit_check.get("remaining_uploads"))
+        except ValueError as e:
+            logger.warning("Ingredient scan limit exceeded", user_id=str(current_user.id), error=str(e))
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+        
+        # Validate file type
+        allowed_extensions = {".jpg", ".jpeg", ".png"}
+        file_extension = file.filename.split(".")[-1].lower()
+        if f".{file_extension}" not in allowed_extensions:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid file type: {file.filename}. Only image files (JPG, PNG) allowed",
+            )
+        
+        # Encode image
+        encoded_data = encode_image_to_base64(file)
+        
+        # Call ingredient scanner agent
+        ingredient_response = await ingredient_scanner_agent(
+            encoded_data["base64_string"],
+            "image",
+            encoded_data["mime_type"]
+        )
+        
+        # Check if analysis failed
+        if not ingredient_response.success:
+            raise HTTPException(status_code=500, detail=ingredient_response.error_message)
+        
+        # Extract analysis data and metadata
+        ingredient_analysis = ingredient_response.data
+        metadata = ingredient_response.metadata if hasattr(ingredient_response, 'metadata') else {}
+        
+        # Track token usage
+        if metadata:
+            await TokenUsageService.track_token_usage(
+                db=db,
+                user=current_user,
+                model_name=metadata.get("model_name", "unknown"),
+                agent_type="ingredient_scanner_agent",
+                input_tokens=metadata.get("input_tokens", 0),
+                output_tokens=metadata.get("output_tokens", 0),
+                total_tokens=metadata.get("total_tokens", 0),
+                endpoint="/api/v1/ai/scan-ingredients",
+                cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
+                cache_read_tokens=metadata.get("cache_read_tokens", 0)
+            )
+        
+        # Increment upload count (using same counter as food uploads)
+        await SubscriptionService.increment_upload_count(db, current_user)
+        
+        result_data = {
+            "user_email": current_user.email,
+            "filename": file.filename,
+            "ingredient_analysis": ingredient_analysis,
+        }
+        
+        logger.info(f"Ingredient scan completed for user {current_user.id}", 
+                   filename=file.filename,
+                   ingredients_count=len(ingredient_analysis.get('ingredients', [])),
+                   overall_rating=ingredient_analysis.get('overall_rating'))
+        
+        return result_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ingredient scan error for user {current_user.id}", 
+                    error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to scan ingredients. Please try again later."
         )
 
 

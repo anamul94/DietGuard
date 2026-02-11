@@ -30,6 +30,14 @@ from .nutrition_calculator_schemas import (
     NutritionCalculationResponse,
 )
 
+from .ingredient_schemas import (
+    DietaryFlags,
+    IngredientDetail,
+    IngredientAnalysis,
+    IngredientScanResponse,
+)
+
+
 __all__ = [
     # Food schemas
     "FoodItem",
@@ -48,4 +56,10 @@ __all__ = [
     # Nutrition Calculator schemas
     "NutritionCalculationRequest",
     "NutritionCalculationResponse",
+    # Ingredient Scanner schemas
+    "AllergenInfo",
+    "DietaryFlags",
+    "IngredientDetail",
+    "IngredientAnalysis",
+    "IngredientScanResponse",
 ]
