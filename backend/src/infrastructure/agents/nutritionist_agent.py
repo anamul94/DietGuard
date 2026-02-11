@@ -2,6 +2,8 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
+from langchain_ollama import ChatOllama
+
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 
 
@@ -28,6 +30,11 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
             model_provider="bedrock_converse",
             region_name=aws_region,
         )
+        ollam_llm = init_chat_model(
+            "glm-4.7-flash:latest",
+            model_provider="ollama",
+        )
+            
     except Exception as e:
         return f"Model initialization failed: {str(e)}"
 
@@ -83,7 +90,7 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
     try:
         # run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: ollam_llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
         )
         
         # Flush events to Langfuse

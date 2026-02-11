@@ -30,6 +30,11 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
             region_name=aws_region,
             temperature=0.1,
         )
+        ollam_llm = init_chat_model(
+            "glm-4.7-flash:latest",
+            model_provider="ollama",
+            temperature=0.1,
+        )
     except Exception as e:
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
@@ -37,8 +42,16 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
     "role": "system",
     "content": (
         "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
-        "Your task is to professionally identify and analyze food items in images. "
-        "Focus exclusively on food items — ignore people, utensils, backgrounds, or non-food elements. "
+        "Your task is to professionally identify and analyze ONLY edible food items in images. "
+        "\n\n**STRICT RULES:**\n"
+        "1. **ONLY identify food items that are meant to be eaten** (e.g., rice, chicken, vegetables, fruits).\n"
+        "2. **EXCLUDE all non-food items**, including but not limited to:\n"
+        "   - Cooking equipment (charcoal, grills, stoves, pans, pots)\n"
+        "   - Utensils (plates, forks, spoons, knives, cups)\n"
+        "   - Garnishes or decorations that are not typically consumed (e.g., inedible flowers, toothpicks)\n"
+        "   - Background elements (tables, napkins, people)\n"
+        "3. **Do NOT mention cooking methods or ingredients used in preparation** unless they are part of the final dish name (e.g., 'grilled chicken' is fine, but do not mention 'charcoal' separately).\n"
+        "4. Focus on the **final prepared food** that a person would consume.\n\n"
         "Your analysis must be precise, identifying each food item and estimating its quantity "
         "(e.g., '2 boiled eggs', '1 cup of rice', 'half an apple'). "
         "Be objective and concise — do not speculate or include unnecessary commentary. "
