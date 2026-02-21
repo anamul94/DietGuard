@@ -10,7 +10,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from ..utils.redis_utils import RedisClient
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -176,11 +176,7 @@ You specialize in:
             messages = [messages[0], email_context] + list(messages[1:])
         
         try:
-            response = self.llm_with_tools.invoke(
-                messages,
-                config={"callbacks": [get_langfuse_handler()]}
-            )
-            flush_langfuse()
+            response = self.llm_with_tools.invoke(messages)
             return {"messages": [response]}
         except Exception as e:
             logging.error(f"Error calling model: {e}")

@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_aws import ChatBedrock
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+
 
 
 async def report_agent(data: str, type: str, mime_type: str) -> str:
@@ -72,13 +72,9 @@ async def report_agent(data: str, type: str, mime_type: str) -> str:
     }
 
     try:
-        # run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: llm.invoke([system_message, message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
         
         return response.text() if hasattr(response, "text") else str(response)
     except Exception as e:

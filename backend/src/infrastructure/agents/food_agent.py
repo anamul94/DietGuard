@@ -2,7 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+
 from .agent_response import AgentResponse
 
 
@@ -28,11 +28,6 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
             "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
-            temperature=0.1,
-        )
-        ollam_llm = init_chat_model(
-            "glm-4.7-flash:latest",
-            model_provider="ollama",
             temperature=0.1,
         )
     except Exception as e:
@@ -100,13 +95,9 @@ async def food_agent(data, type: str, mime_type) -> AgentResponse:
     }
 
     try:
-        # run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: llm.invoke([system_message, message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
         
         return AgentResponse.success_response(response.text() if hasattr(response, "text") else str(response))
     except Exception as e:

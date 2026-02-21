@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 import logging
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+
 from .agent_response import AgentResponse
 from ...presentation.schemas.ingredient_schemas import IngredientAnalysis
 
@@ -160,13 +160,9 @@ async def ingredient_scanner_agent(data, media_type, mime_type):
 
     try:
         # Invoke with structured output (returns dict with 'parsed' and 'raw')
-        # run blocking call in a thread-safe way with Langfuse tracing
         result = await asyncio.to_thread(
-            lambda: structured_llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: structured_llm.invoke([system_message, message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
         
         # Extract parsed data
         parsed: IngredientAnalysis = result["parsed"]

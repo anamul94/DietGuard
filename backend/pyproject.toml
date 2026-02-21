@@ -9,7 +9,7 @@ dependencies = [
     "langchain>=0.3.27",
     "langchain-aws>=0.2.33",
     "langchain-community>=0.3.0",
-    "langfuse>=3.5.0",
+
     "langgraph>=0.6.7",
     "pillow>=11.3.0",
     "python-dotenv>=1.1.1",
