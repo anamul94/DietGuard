@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ingredient Analysis Report</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      font-size: 18px;
+      /* Base font increased */
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 42px;
+      /* Increased from 32px */
+      margin-bottom: 15px;
+    }
+
+    .header p {
+      font-size: 18px;
+      /* Increased from 16px */
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 30px;
+    }
+
+    .overall-rating {
+      background: #f8f9fa;
+      border-radius: 15px;
+      padding: 25px;
+      margin-bottom: 30px;
+      border-left: 5px solid;
+    }
+
+    .overall-rating.green {
+      border-left-color: #10b981;
+      background: #ecfdf5;
+    }
+
+    .overall-rating.yellow {
+      border-left-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .overall-rating.red {
+      border-left-color: #ef4444;
+      background: #fef2f2;
+    }
+
+    .rating-badge {
+      display: inline-block;
+      padding: 10px 24px;
+      border-radius: 25px;
+      font-weight: bold;
+      font-size: 16px;
+      /* Increased from 14px */
+      text-transform: uppercase;
+      margin-bottom: 15px;
+    }
+
+    .rating-badge.green {
+      background: #10b981;
+      color: white;
+    }
+
+    .rating-badge.yellow {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .rating-badge.red {
+      background: #ef4444;
+      color: white;
+    }
+
+    .summary {
+      font-size: 18px;
+      /* Increased from 16px */
+      line-height: 1.6;
+      color: #374151;
+    }
+
+    .critical-warnings {
+      background: #fef2f2;
+      border-left: 4px solid #ef4444;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+
+    .critical-warnings h3 {
+      color: #dc2626;
+      font-size: 24px;
+      /* Increased from 18px */
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .critical-warnings h3::before {
+      content: "⚠️";
+      font-size: 28px;
+    }
+
+    .warning-item {
+      background: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      color: #991b1b;
+      font-weight: 600;
+      font-size: 16px;
+      /* Explicitly set */
+    }
+
+    .warning-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .ingredients-section h2 {
+      font-size: 28px;
+      /* Increased from 24px */
+      color: #1f2937;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .ingredient-card {
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 25px;
+      /* Increased padding */
+      margin-bottom: 20px;
+      border-left: 6px solid;
+      /* Thicker border */
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .ingredient-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .ingredient-card.green {
+      border-left-color: #10b981;
+    }
+
+    .ingredient-card.yellow {
+      border-left-color: #f59e0b;
+    }
+
+    .ingredient-card.red {
+      border-left-color: #ef4444;
+    }
+
+    .ingredient-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 15px;
+    }
+
+    .ingredient-name {
+      font-size: 24px;
+      /* Increased from 18px */
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+    }
+
+    .ingredient-rating {
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 14px;
+      /* Increased from 12px */
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .ingredient-rating.green {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .ingredient-rating.yellow {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .ingredient-rating.red {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .chemical-info {
+      font-size: 16px;
+      /* Increased from 14px */
+      color: #6b7280;
+      margin-bottom: 12px;
+    }
+
+    .explanation {
+      margin-bottom: 15px;
+      padding: 15px;
+      border-radius: 8px;
+    }
+
+    .explanation.quick {
+      background-color: #f0f9ff;
+      border-left: 4px solid #3b82f6;
+    }
+
+    .explanation.detailed {
+      background-color: #f8fafc;
+      border-left: 4px solid #94a3b8;
+    }
+
+    .explanation-label {
+      font-size: 14px;
+      /* Increased from 12px */
+      font-weight: 700;
+      color: #1e40af;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .explanation.detailed .explanation-label {
+      color: #475569;
+    }
+
+    .explanation-text {
+      font-size: 16px;
+      /* Increased from 14px */
+      line-height: 1.7;
+      color: #334155;
+    }
+
+    .concerns {
+      margin-top: 15px;
+    }
+
+    .concern-tag {
+      display: inline-block;
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      /* Increased from 13px */
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    .age-restriction {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-size: 16px;
+      /* Increased from 14px */
+      color: #92400e;
+    }
+
+    .dietary-flags {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+      flex-wrap: wrap;
+    }
+
+    .dietary-flag {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      /* Increased from 12px */
+      font-weight: 500;
+    }
+
+    .dietary-flag.yes {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .dietary-flag.no {
+      background: #f3f4f6;
+      color: #6b7280;
+    }
+
+    .footer {
+      background: #f9fafb;
+      padding: 25px;
+      text-align: center;
+      color: #6b7280;
+      font-size: 16px;
+      /* Increased from 14px */
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        border-radius: 0;
+      }
+
+      .header h1 {
+        font-size: 32px;
+      }
+
+      .content {
+        padding: 20px;
+      }
+
+      .ingredient-header {
+        flex-direction: column;
+        gap: 10px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔬 Ingredient Analysis Report</h1>
+      <p>Detailed health assessment of food ingredients</p>
+    </div>
+
+    <div class="content">
+      <!-- JSON Input Section -->
+      <div
+        style="background: #f0f9ff; border: 2px dashed #3b82f6; border-radius: 12px; padding: 20px; margin-bottom: 30px;">
+        <h3 style="color: #1e40af; margin-bottom: 15px; font-size: 18px;">📋 Paste Your API Response Here</h3>
+        <textarea id="jsonInput" placeholder='Paste your JSON response here, for example:
+{
+  "user_email": "user@example.com",
+  "filename": "product.jpg",
+  "ingredient_analysis": {
+    "ingredients": [...],
+    "overall_rating": "yellow",
+    "summary": "...",
+    "critical_warnings": [...]
+  }
+}' style="width: 100%; min-height: 200px; padding: 15px; border: 1px solid #bfdbfe; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 13px; resize: vertical;"></textarea>
+        <button onclick="loadCustomData()"
+          style="margin-top: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s;"
+          onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+          🔄 Load & Display Analysis
+        </button>
+        <div id="errorMessage" style="margin-top: 10px; color: #dc2626; font-size: 14px; display: none;"></div>
+      </div>
+
+      <!-- Overall Rating Section -->
+      <div class="overall-rating" id="overallRating">
+        <div class="rating-badge" id="overallBadge">Paste JSON above and click "Load & Display Analysis"</div>
+        <div class="summary" id="overallSummary">Waiting for data...</div>
+      </div>
+
+      <!-- Critical Warnings Section -->
+      <div class="critical-warnings" id="criticalWarnings" style="display: none;">
+        <h3>Critical Warnings</h3>
+        <div id="warningsList"></div>
+      </div>
+
+      <!-- Ingredients List -->
+      <div class="ingredients-section">
+        <h2>📋 Ingredient Breakdown</h2>
+        <div id="ingredientsList"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>💡 This analysis is for educational purposes. Consult healthcare professionals for medical advice.</p>
+    </div>
+  </div>
+
+  <script>
+    // Sample data - replace this with your actual API response
+    const sampleData = {
+      "user_email": "user@example.com",
+      "filename": "product_label.jpg",
+      "ingredient_analysis": {
+        "ingredients": [
+          {
+            "name": "Water",
+            "chemical_name": "H2O",
+            "common_name": "Water",
+            "health_rating": "green",
+            "short_explanation": "Essential for life and hydration.",
+            "detailed_explanation": "Water is the most essential nutrient for human life. It helps regulate body temperature, transport nutrients, and remove waste. Pure water has no calories and is completely safe for all age groups.",
+            "concerns": [],
+            "age_restrictions": null,
+            "dietary_flags": {
+              "vegan": true,
+              "vegetarian": true,
+              "halal": true,
+              "kosher": true
+            }
+          },
+          {
+            "name": "Monosodium Glutamate (MSG / E621)",
+            "chemical_name": "Monosodium Glutamate",
+            "common_name": "MSG",
+            "health_rating": "yellow",
+            "short_explanation": "A flavor enhancer that may cause headaches in sensitive individuals.",
+            "detailed_explanation": "MSG is a common flavor enhancer used to intensify savory tastes. While generally recognized as safe by food authorities, some people report sensitivity symptoms like headaches, flushing, or sweating. Not recommended in large amounts for young children.",
+            "concerns": ["May cause headaches", "Not recommended for children under 5", "High sodium content - avoid if you have hypertension"],
+            "age_restrictions": "Not recommended for children under 5 years",
+            "dietary_flags": {
+              "vegan": true,
+              "vegetarian": true,
+              "halal": true,
+              "kosher": true
+            }
+          }
+        ],
+        "overall_rating": "yellow",
+        "summary": "This product contains flavor enhancers that may not be suitable for young children and patients with hypertension due to high sodium content.",
+        "critical_warnings": [
+          "Contains MSG - not recommended for children under 5",
+          "High sodium content - harmful for heart, kidney, and hypertension patients"
+        ]
+      }
+    };
+
+    // Function to render the analysis
+    function renderAnalysis(data) {
+      const analysis = data.ingredient_analysis;
+
+      // Render overall rating
+      const overallRating = document.getElementById('overallRating');
+      const overallBadge = document.getElementById('overallBadge');
+      const overallSummary = document.getElementById('overallSummary');
+
+      overallRating.className = `overall-rating ${analysis.overall_rating}`;
+      overallBadge.className = `rating-badge ${analysis.overall_rating}`;
+      overallBadge.textContent = `${analysis.overall_rating} Rating`;
+      overallSummary.textContent = analysis.summary;
+
+      // Render critical warnings
+      if (analysis.critical_warnings && analysis.critical_warnings.length > 0) {
+        document.getElementById('criticalWarnings').style.display = 'block';
+        const warningsList = document.getElementById('warningsList');
+        warningsList.innerHTML = analysis.critical_warnings
+          .map(warning => `<div class="warning-item">${warning}</div>`)
+          .join('');
+      }
+
+      // Render ingredients
+      const ingredientsList = document.getElementById('ingredientsList');
+      ingredientsList.innerHTML = analysis.ingredients.map(ingredient => `
+                <div class="ingredient-card ${ingredient.health_rating}">
+                    <div class="ingredient-header">
+                        <div class="ingredient-name">${ingredient.name}</div>
+                        <div class="ingredient-rating ${ingredient.health_rating}">
+                            ${ingredient.health_rating}
+                        </div>
+                    </div>
+
+                    ${ingredient.chemical_name ? `
+                        <div class="chemical-info">
+                            <strong>Chemical Name:</strong> ${ingredient.chemical_name}
+                            ${ingredient.common_name ? ` | <strong>Common Name:</strong> ${ingredient.common_name}` : ''}
+                        </div>
+                    ` : ''}
+
+                    <div class="explanation quick">
+                        <div class="explanation-label">⚡ Quick Summary</div>
+                        <div class="explanation-text">${ingredient.short_explanation}</div>
+                    </div>
+
+                    <div class="explanation detailed">
+                        <div class="explanation-label">📖 Detailed Explanation</div>
+                        <div class="explanation-text">${ingredient.detailed_explanation}</div>
+                    </div>
+
+                    ${ingredient.concerns && ingredient.concerns.length > 0 ? `
+                        <div class="concerns">
+                            ${ingredient.concerns.map(concern => `
+                                <span class="concern-tag">⚠️ ${concern}</span>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${ingredient.age_restrictions ? `
+                        <div class="age-restriction">
+                            👶 <strong>Age Restriction:</strong> ${ingredient.age_restrictions}
+                        </div>
+                    ` : ''}
+
+                    <div class="dietary-flags">
+                        <span class="dietary-flag ${ingredient.dietary_flags.vegan ? 'yes' : 'no'}">
+                            ${ingredient.dietary_flags.vegan ? '✓' : '✗'} Vegan
+                        </span>
+                        <span class="dietary-flag ${ingredient.dietary_flags.vegetarian ? 'yes' : 'no'}">
+                            ${ingredient.dietary_flags.vegetarian ? '✓' : '✗'} Vegetarian
+                        </span>
+                        <span class="dietary-flag ${ingredient.dietary_flags.halal ? 'yes' : 'no'}">
+                            ${ingredient.dietary_flags.halal ? '✓' : '✗'} Halal
+                        </span>
+                        <span class="dietary-flag ${ingredient.dietary_flags.kosher ? 'yes' : 'no'}">
+                            ${ingredient.dietary_flags.kosher ? '✓' : '✗'} Kosher
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+    }
+
+    // Function to load custom data from textarea
+    function loadCustomData() {
+      const jsonInput = document.getElementById('jsonInput');
+      const errorMessage = document.getElementById('errorMessage');
+
+      try {
+        const data = JSON.parse(jsonInput.value);
+        errorMessage.style.display = 'none';
+        renderAnalysis(data);
+      } catch (error) {
+        errorMessage.style.display = 'block';
+        errorMessage.textContent = '❌ Invalid JSON format. Please check your input and try again. Error: ' + error.message;
+      }
+    }
+
+    // Initialize with sample data (optional, can be removed if you want a blank state)
+    renderAnalysis(sampleData);
+  </script>
+</body>
+
+</html>

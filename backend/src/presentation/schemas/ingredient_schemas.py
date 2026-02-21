@@ -64,6 +64,7 @@ class IngredientAnalysis(BaseModel):
     """Complete ingredient analysis from food packaging"""
     ingredients: List[IngredientDetail] = Field(..., description="List of analyzed ingredients with health ratings")
     overall_rating: str = Field(..., description="Overall product health rating: 'green', 'yellow', or 'red'")
+    nutrigrade: str = Field(..., description="Singapore NutriGrade rating for overall product: 'A' (healthiest), 'B', 'C', or 'D' (least healthy), based on sugar and saturated fat content")
     summary: str = Field(..., description="Product-level health summary in simple language")
     critical_warnings: List[str] = Field(default_factory=list, description="High-priority warnings (preservatives for children, allergens, etc.)")
     
@@ -89,6 +90,7 @@ class IngredientAnalysis(BaseModel):
                     }
                 ],
                 "overall_rating": "yellow",
+                "nutrigrade": "C",
                 "summary": "This product contains flavor enhancers that may not be suitable for young children.",
                 "critical_warnings": ["Contains MSG - not recommended for children under 5"]
             }
@@ -109,6 +111,7 @@ class IngredientScanResponse(BaseModel):
                 "ingredient_analysis": {
                     "ingredients": [],
                     "overall_rating": "yellow",
+                    "nutrigrade": "C",
                     "summary": "Product contains some ingredients of concern.",
                     "critical_warnings": []
                 }

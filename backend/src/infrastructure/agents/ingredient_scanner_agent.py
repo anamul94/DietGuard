@@ -111,6 +111,28 @@ async def ingredient_scanner_agent(data, type, mime_type):
             "\n   - Flag high sodium content for heart/kidney/hypertension patients"
             "\n   - Flag high sugar content for diabetes patients"
             "\n   - Warn about artificial additives for liver disease patients"
+            "\n\n**10. NUTRIGRADE CALCULATION (SINGAPORE FOOD GRADING):**"
+            "\n   - **MANDATORY**: Assign a NutriGrade (A, B, C, or D) based on the product's nutritional information"
+            "\n   - NutriGrade is Singapore's official food grading system based on sugar and saturated fat content"
+            "\n   - The grade is determined by the WORST of the two metrics (sugar OR saturated fat)"
+            "\n\n   **Sugar Content Grading (per 100ml for beverages, per 100g for food):**"
+            "\n   - Grade A: ≤ 1g sugar"
+            "\n   - Grade B: > 1g to ≤ 5g sugar"
+            "\n   - Grade C: > 5g to ≤ 10g sugar"
+            "\n   - Grade D: > 10g sugar"
+            "\n\n   **Saturated Fat Content Grading (per 100ml for beverages, per 100g for food):**"
+            "\n   - Grade A: ≤ 1.2g saturated fat"
+            "\n   - Grade B: > 1.2g to ≤ 2.8g saturated fat"
+            "\n   - Grade C: > 2.8g to ≤ 4.0g saturated fat"
+            "\n   - Grade D: > 4.0g saturated fat"
+            "\n\n   **How to Assign NutriGrade:**"
+            "\n   1. Read the Nutrition Facts table from the packaging image"
+            "\n   2. Extract sugar content and saturated fat content (per 100g or per 100ml)"
+            "\n   3. Determine the grade for sugar using the sugar grading table above"
+            "\n   4. Determine the grade for saturated fat using the saturated fat grading table above"
+            "\n   5. Assign the WORST grade between the two as the final NutriGrade"
+            "\n   6. Example: If sugar = Grade B and saturated fat = Grade D, then NutriGrade = D"
+            "\n   7. If nutritional information is not visible or available, assign Grade C as default"
             "\n\nBe thorough, educational, and prioritize consumer safety - especially for vulnerable groups like children, pregnant women, and patients with chronic health conditions (heart disease, kidney disease, diabetes, hypertension, liver disease)."
         ),
     }
@@ -118,7 +140,7 @@ async def ingredient_scanner_agent(data, type, mime_type):
     content = [
         {
             "type": "text", 
-            "text": "Please analyze the ingredient list from this food packaging image. Extract all ingredients and provide health analysis with ratings."
+            "text": "Please analyze the ingredient list from this food packaging image. Extract all ingredients, provide health analysis with ratings, and calculate the NutriGrade (A, B, C, or D) based on the nutritional information visible on the packaging."
         },
         {
             "type": type,
