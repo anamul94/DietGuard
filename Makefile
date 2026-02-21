@@ -23,7 +23,7 @@ help:
 	@echo "  make clean-orphans - Remove orphan containers"
 	@echo ""
 	@echo "  make status      - Show container status"
-	@echo "  make health      - Check API health"
+	@echo "  make health      - Check API health (Port 8011)"
 
 # Start services
 up:
@@ -56,7 +56,7 @@ shell:
 	docker compose exec backend sh
 
 db-shell:
-	docker compose exec postgres psql -U postgres -d dietguard_db
+	docker compose exec postgres psql -U dietguard -d dietguard
 
 # Database operations
 migrate:
@@ -79,8 +79,8 @@ setup: build
 	@$(MAKE) seed
 	@echo ""
 	@echo "✓ Setup complete!"
-	@echo "  Backend API: http://localhost:8000"
-	@echo "  API Docs: http://localhost:8000/docs"
+	@echo "  Backend API: http://localhost:8011"
+	@echo "  API Docs: http://localhost:8011/docs"
 	@echo ""
 
 # Cleanup
@@ -104,4 +104,4 @@ status:
 
 health:
 	@echo "Checking API health..."
-	@curl -s http://localhost:8000/health | python3 -m json.tool || echo "❌ API not responding"
+	@curl -s http://localhost:8011/health | python3 -m json.tool || echo "❌ API not responding"
