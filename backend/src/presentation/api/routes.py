@@ -8,8 +8,9 @@ from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent
+from ...infrastructure.agents.ingredient_scanner_agent import ingredient_scanner_agent
+from ..schemas.ingredient_schemas import IngredientScanResponse
 from ...infrastructure.utils.redis_utils import RedisClient
-# from ...infrastructure.messaging.rabbitmq_client import rabbitmq_client
 from .chatbot_routes import router as chatbot_router
 
 import json
@@ -278,3 +279,52 @@ async def delete_all_data(user_id: str):
         "message": f"All data deletion process completed for user: {user_id}",
         "details": results
     }
+@app.post("/scan-ingredients", response_model=IngredientScanResponse)
+async def scan_ingredients_endpoint(
+    file: UploadFile = File(..., description="Food packaging image (JPG, PNG)"),
+):
+    """
+    Public endpoint to scan food packaging ingredients.
+    No authentication required.
+    """
+    try:
+        logging.info(f"Ingredient scan request: {file.filename}")
+        
+        # Validate file type
+        allowed_extensions = {".jpg", ".jpeg", ".png"}
+        file_extension = file.filename.split(".")[-1].lower()
+        if f".{file_extension}" not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type: {file.filename}. Only image files (JPG, PNG) allowed",
+            )
+        
+        # Encode image
+        encoded_data = encode_image_to_base64(file)
+        
+        # Call ingredient scanner agent
+        ingredient_response = await ingredient_scanner_agent(
+            encoded_data["base64_string"],
+            "image",
+            encoded_data["mime_type"]
+        )
+        
+        # Check if analysis failed
+        if not ingredient_response.success:
+            raise HTTPException(status_code=500, detail=ingredient_response.error_message)
+        
+        # Return response
+        return {
+            "user_email": "public@dietguard.ai",
+            "filename": file.filename,
+            "ingredient_analysis": ingredient_response.data,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Ingredient scan error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to scan ingredients. Please try again later."
+        )

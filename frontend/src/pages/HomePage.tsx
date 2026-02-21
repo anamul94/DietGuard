@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Camera, Trash2, Brain, Stethoscope, Apple } from 'lucide-react';
+import { FileText, Camera, Trash2, Brain, Stethoscope, Apple, Search, Shield } from 'lucide-react';
 
 const HomePage: React.FC = () => {
   return (
@@ -14,7 +14,7 @@ const HomePage: React.FC = () => {
           AI-Powered Nutritionist
         </h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-          Upload your medical reports and food images to get personalized nutritional guidance 
+          Upload your medical reports and food images to get personalized nutritional guidance
           from our AI doctors specialized in clinical nutrition.
         </p>
       </div>
@@ -42,6 +42,18 @@ const HomePage: React.FC = () => {
           </div>
           <p className="text-gray-600">
             Take photos of your meals for nutritional analysis and personalized recommendations.
+          </p>
+        </Link>
+
+        <Link to="/scan-ingredients" className="glass-effect rounded-xl p-6 hover:shadow-lg transition-all duration-300 group">
+          <div className="flex items-center space-x-4 mb-4">
+            <div className="bg-amber-100 p-3 rounded-lg group-hover:bg-amber-200 transition-colors">
+              <Search className="h-6 w-6 text-amber-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800">Scan Ingredients</h3>
+          </div>
+          <p className="text-gray-600">
+            Scan food packaging to analyze ingredients with health ratings, allergen info, and NutriGrade.
           </p>
         </Link>
 
@@ -86,6 +98,14 @@ const HomePage: React.FC = () => {
             <p className="text-sm text-gray-600">Clinical Nutritionist</p>
             <p className="text-xs text-gray-500 mt-1">15 Years Experience</p>
           </div>
+          <div className="text-center">
+            <div className="bg-amber-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+              <Shield className="h-8 w-8 text-amber-600" />
+            </div>
+            <h3 className="font-semibold text-gray-800 mb-2">Dr. Sarah Chen</h3>
+            <p className="text-sm text-gray-600">Food Safety Expert</p>
+            <p className="text-xs text-gray-500 mt-1">Ingredient Analysis</p>
+          </div>
         </div>
       </div>
 
@@ -98,8 +118,8 @@ const HomePage: React.FC = () => {
           <div>
             <h3 className="font-semibold text-gray-800 mb-2">Privacy & Data Security</h3>
             <p className="text-sm text-gray-600">
-              Your health data is processed securely and automatically deleted after 24 hours. 
-              We don't store personal information permanently. All AI analysis is performed with 
+              Your health data is processed securely and automatically deleted after 24 hours.
+              We don't store personal information permanently. All AI analysis is performed with
               medical-grade privacy standards.
             </p>
           </div>

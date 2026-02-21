@@ -103,3 +103,51 @@ export const deleteAllData = async (userId: string): Promise<{ message: string; 
   const response = await api.delete(`/delete_all_data/${userId}`);
   return response.data;
 };
+
+// Ingredient Scanner Types
+export interface DietaryFlags {
+  vegan: boolean;
+  vegetarian: boolean;
+  halal: boolean;
+  kosher: boolean;
+}
+
+export interface IngredientDetail {
+  name: string;
+  chemical_name?: string;
+  common_name?: string;
+  health_rating: string;
+  short_explanation: string;
+  detailed_explanation: string;
+  concerns: string[];
+  age_restrictions?: string;
+  dietary_flags: DietaryFlags;
+}
+
+export interface IngredientAnalysis {
+  ingredients: IngredientDetail[];
+  overall_rating: string;
+  nutrigrade: string;
+  summary: string;
+  critical_warnings: string[];
+}
+
+export interface ScanIngredientsResponse {
+  user_email: string;
+  filename: string;
+  ingredient_analysis: IngredientAnalysis;
+}
+
+export const scanIngredients = async (file: File): Promise<ScanIngredientsResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await api.post('/scan-ingredients', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    timeout: 120000,
+  });
+
+  return response.data;
+};

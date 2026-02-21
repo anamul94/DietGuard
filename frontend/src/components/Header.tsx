@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Brain, FileText } from 'lucide-react';
+import { Activity, Brain, FileText, Search } from 'lucide-react';
 
 const Header: React.FC = () => {
   return (
@@ -26,6 +26,14 @@ const Header: React.FC = () => {
             >
               <Activity className="h-5 w-5" />
               <span className="text-sm font-medium">Settings</span>
+            </Link>
+            <Link
+              to="/scan-ingredients"
+              className="flex items-center space-x-2 text-amber-600 hover:text-amber-800 transition-colors"
+              title="Scan Food Ingredients"
+            >
+              <Search className="h-5 w-5" />
+              <span className="text-sm font-medium">Scan</span>
             </Link>
             <Link
               to="/markdown-test"

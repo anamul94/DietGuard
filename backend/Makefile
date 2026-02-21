@@ -1,7 +1,7 @@
 .PHONY: build run stop clean dev install
 
-IMAGE_NAME = prodmeasure
-CONTAINER_NAME = prodmeasure-app
+IMAGE_NAME = dietguard
+CONTAINER_NAME = dietguard-app
 
 build:
 	docker build -t $(IMAGE_NAME) .
