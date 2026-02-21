@@ -28,7 +28,7 @@ async def summary_agent(nutrition_report: str) -> str:
     try:
         llm = init_chat_model(
             # "anthropic.claude-3-haiku-20240307-v1:0",
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "apac.anthropic.claude-sonnet-4-20250514-v1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
         )

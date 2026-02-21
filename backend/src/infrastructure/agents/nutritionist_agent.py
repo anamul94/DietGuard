@@ -25,7 +25,7 @@ async def nutritionist_agent(food_analysis: str, medical_report: str, meal_time:
 
     try:
         llm = init_chat_model(
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "apac.anthropic.claude-sonnet-4-20250514-v1:0",
             model_provider="bedrock_converse",
             region_name=aws_region,
         )
