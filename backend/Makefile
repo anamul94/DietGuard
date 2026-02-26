@@ -1,6 +1,6 @@
 .PHONY: build run stop clean dev install setup-db migrate
 
-IMAGE_NAME = dietguard-backend
+IMAGE_NAME = dietguard-backend-food
 CONTAINER_NAME = dietguard-backend-app
 
 build:
