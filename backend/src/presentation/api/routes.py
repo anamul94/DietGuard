@@ -1,6 +1,7 @@
+from typing import Annotated, List, Optional
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional
 from ..schemas import FoodUploadResponse, NutritionAdviceRequest, NutritionAdviceResponse
 import asyncio
 import socketio
@@ -21,6 +22,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import json
 
+MULTI_FILE_UPLOAD_SCHEMA = {
+    "content": {
+        "multipart/form-data": {
+            "schema": {
+                "type": "object",
+                "required": ["files"],
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "binary",
+                        },
+                    }
+                },
+            }
+        }
+    },
+    "required": True,
+}
+
 # Import routers
 from .auth_routes import router as auth_router
 from .user_routes import router as user_router
@@ -28,6 +50,7 @@ from .payment_routes import router as payment_router
 from .package_routes import router as package_router
 from .admin_routes import router as admin_router
 from .ai_agent_routes import router as ai_agent_router
+from .health_routes import router as health_router
 
 # Create FastAPI app with enhanced OpenAPI configuration
 app = FastAPI(
@@ -66,6 +89,10 @@ app = FastAPI(
         {
             "name": "Admin",
             "description": "Administrative operations (user management, statistics)"
+        },
+        {
+            "name": "Health Timeline",
+            "description": "Structured medical profile, confirmed meals, vitals, and longitudinal insight endpoints"
         }
     ],
     contact={
@@ -80,6 +107,7 @@ app = FastAPI(
 # Include routers
 app.include_router(auth_router, prefix="/api/v1/auth")
 app.include_router(ai_agent_router, prefix="/api/v1/ai")
+app.include_router(health_router, prefix="/api/v1/health")
 app.include_router(user_router, prefix="/api/v1/users")
 app.include_router(payment_router, prefix="/api/v1/payment")
 app.include_router(package_router, prefix="/api/v1")
@@ -216,9 +244,9 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 
-@app.post("/upload_food/", response_model=FoodUploadResponse)
+@app.post("/upload_food/", response_model=FoodUploadResponse, openapi_extra={"requestBody": MULTI_FILE_UPLOAD_SCHEMA})
 async def upload_food(
-    files: List[UploadFile] = File(..., description="Food images"),
+    files: Annotated[List[UploadFile], File(description="Food images")],
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -268,7 +296,7 @@ async def upload_food(
         from ...application.services.patient_service import PatientService
         user_location = None
         try:
-            patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+            patient_profile = await PatientService.get_patient_profile(db, current_user.id)
             persona_data = patient_profile.get("persona", {})
             user_location = persona_data.get("current_location")
             if user_location:
@@ -414,7 +442,7 @@ async def get_nutritionist_advice(
         
         # Save to PostgreSQL
         postgres_client = PostgresClient()
-        await postgres_client.save_nutrition_data(current_user.email, save_data)
+        await postgres_client.save_nutrition_data(str(current_user.id), save_data)
         
         # Increment nutrition analysis count
         await SubscriptionService.increment_nutrition_count(db, current_user)
@@ -478,9 +506,9 @@ async def debug_redis(user_id: str):
         }
 
 
-@app.post("/upload_report/")
+@app.post("/upload_report/", openapi_extra={"requestBody": MULTI_FILE_UPLOAD_SCHEMA})
 async def upload_report(
-    files: List[UploadFile] = File(..., description="Image or PDF files"),
+    files: Annotated[List[UploadFile], File(description="Image or PDF files")],
     current_user: User = Depends(get_current_active_user)
 ):
     logger.info("Report upload started", user_id=str(current_user.id), file_count=len(files))
@@ -533,7 +561,7 @@ async def upload_report(
 
         # Save to PostgreSQL (no expiration)
         postgres_client = PostgresClient()
-        await postgres_client.save_report_data(current_user.email, result_data)
+        await postgres_client.save_report_data(str(current_user.id), result_data)
         
         logger.info("Report upload completed successfully", user_id=str(current_user.id), files_processed=len(files))
         return result_data

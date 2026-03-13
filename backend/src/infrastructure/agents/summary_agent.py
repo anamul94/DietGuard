@@ -1,9 +1,7 @@
 import asyncio
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
+from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
 
 
 async def summary_agent(nutrition_report: str) -> str:
@@ -12,33 +10,18 @@ async def summary_agent(nutrition_report: str) -> str:
     """
     logger.info("Summary agent invoked")
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Summary agent configuration error - missing AWS credentials",
-                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
-        return (
-            "Environment variables not loaded. "
-            f"AWS_ACCESS_KEY_ID: {'✓' if aws_key else '✗'}, "
-            f"AWS_SECRET_ACCESS_KEY: {'✓' if aws_secret else '✗'}, "
-            f"AWS_REGION: {'✓' if aws_region else '✗'}"
-        )
-
     try:
-        llm = init_chat_model(
-            # "anthropic.claude-3-haiku-20240307-v1:0",
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
-        )
+        config = get_bedrock_config()
+        llm = create_bedrock_chat_model()
     except Exception as e:
-        logger.error("Summary agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
+        logger.error(
+            "Summary agent LLM initialization failed",
+            error=str(e),
+            exception_type=type(e).__name__,
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+        )
         return f"Model initialization failed: {str(e)}"
 
     system_message = {

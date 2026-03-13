@@ -1,9 +1,8 @@
 import asyncio
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
+from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.nutrition_utils import format_metric
 from .agent_response import AgentResponse
 
 
@@ -37,27 +36,17 @@ async def nutritionist_agent(
     """
     logger.info("Nutritionist agent invoked", meal_type=meal_type, meal_time=meal_time, age=age, gender=gender, has_nutrition=bool(nutrition_values))
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Nutritionist agent configuration error - missing AWS credentials")
-        raise ValueError("Configuration error. Please try again later.")
-
     try:
-        llm = init_chat_model(
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
-            temperature=0.1,
-        )
+        config = get_bedrock_config()
+        llm = create_bedrock_chat_model(temperature=0.1)
     except Exception as e:
-        logger.error("Nutritionist agent LLM initialization failed", error=str(e))
+        logger.error(
+            "Nutritionist agent LLM initialization failed",
+            error=str(e),
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+        )
         raise ValueError("Nutritionist service is temporarily unavailable. Please try again later.")
 
     
@@ -77,12 +66,12 @@ async def nutritionist_agent(
     if nutrition_values:
         nutrition_section = (
             f"**Nutritional Breakdown:**\n"
-            f"- Calories: {nutrition_values.get('calories', 'N/A')}\n"
-            f"- Protein: {nutrition_values.get('protein', 'N/A')}\n"
-            f"- Carbohydrates: {nutrition_values.get('carbohydrates', 'N/A')}\n"
-            f"- Fat: {nutrition_values.get('fat', 'N/A')}\n"
-            f"- Fiber: {nutrition_values.get('fiber', 'N/A')}\n"
-            f"- Sugar: {nutrition_values.get('sugar', 'N/A')}\n\n"
+            f"- Calories: {format_metric(nutrition_values.get('calories'), 'kcal') if nutrition_values.get('calories') is not None else 'N/A'}\n"
+            f"- Protein: {format_metric(nutrition_values.get('protein'), 'g') if nutrition_values.get('protein') is not None else 'N/A'}\n"
+            f"- Carbohydrates: {format_metric(nutrition_values.get('carbohydrates'), 'g') if nutrition_values.get('carbohydrates') is not None else 'N/A'}\n"
+            f"- Fat: {format_metric(nutrition_values.get('fat'), 'g') if nutrition_values.get('fat') is not None else 'N/A'}\n"
+            f"- Fiber: {format_metric(nutrition_values.get('fiber'), 'g') if nutrition_values.get('fiber') is not None else 'N/A'}\n"
+            f"- Sugar: {format_metric(nutrition_values.get('sugar'), 'g') if nutrition_values.get('sugar') is not None else 'N/A'}\n\n"
         )
 
     user_message = {

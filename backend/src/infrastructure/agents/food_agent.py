@@ -1,13 +1,11 @@
 import asyncio
-import os
-from dotenv import load_dotenv
-from pydantic import BaseModel, Field
-from typing import List
-from langchain.chat_models import init_chat_model
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+
+from ..utils.langfuse_utils import flush_langfuse, get_langfuse_handler
 from ..utils.logger import logger
+from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.nutrition_utils import metric_value
 from .agent_response import AgentResponse
-from ...presentation.schemas.food_schemas import NutritionInfo, FoodAnalysis
+from ...presentation.schemas.food_schemas import FoodAnalysis
 
 
 async def food_agent(data, type, mime_type, location=None):
@@ -26,30 +24,20 @@ async def food_agent(data, type, mime_type, location=None):
     image_count = len(data) if isinstance(data, list) else 1
     logger.info("Food agent invoked", image_count=image_count)
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Food agent configuration error - missing AWS credentials", 
-                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
-        return AgentResponse.error_response("Configuration error. Please try again later.")
-
     try:
-        llm = init_chat_model(
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
-            temperature=0.1,
-        )
+        config = get_bedrock_config()
+        llm = create_bedrock_chat_model(temperature=0.1)
         # Apply structured output schema with raw response for metadata
         structured_llm = llm.with_structured_output(FoodAnalysis, include_raw=True)
     except Exception as e:
-        logger.error("Food agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
+        logger.error(
+            "Food agent LLM initialization failed",
+            error=str(e),
+            exception_type=type(e).__name__,
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+        )
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
     # Build location context if available
@@ -77,9 +65,15 @@ async def food_agent(data, type, mime_type, location=None):
             "\n   - Preparation method if identifiable (grilled, fried, boiled, baked, etc.)"
             "\n   - Examples: 'pizza with cheese and tomato', 'grilled chicken with naan roti', "
             "'caesar salad with croutons and parmesan cheese', 'fried rice with vegetables and egg', 'seekh kabab'"
-            "\n4. Focus exclusively on EDIBLE food items — ignore people, utensils, backgrounds, cooking equipment, or any non-food elements"
-            "\n5. Provide accurate nutritional estimates for the TOTAL meal (sum of all items)"
-            "\n6. Be objective and precise — do not speculate or include unnecessary commentary"
+            "\n4. Group toppings, fillings, garnish salad, sauces, dips, or plate decoration into the main item unless they are clearly separate servings"
+            "\n5. Return only the distinct meal items a user would realistically confirm in a food log"
+            "\n6. Focus exclusively on EDIBLE food items — ignore people, utensils, backgrounds, cooking equipment, or any non-food elements"
+            "\n7. Provide item-level nutrition for each identified food item in `fooditem_details`"
+            "\n8. Provide accurate nutritional estimates for the TOTAL meal (sum of all items) in `nutrition`"
+            "\n8. Return nutrition fields as structured objects with value and unit."
+            "\n   Example: calories = {\"value\": 320, \"unit\": \"kcal\"}, protein = {\"value\": 12, \"unit\": \"g\"}"
+            "\n9. `fooditem_details` is the source of truth and must include the item name, optional quantity/preparation, and that item's nutrition."
+            "\n10. Be objective and precise — do not speculate or include unnecessary commentary"
         ),
     }
 
@@ -87,7 +81,7 @@ async def food_agent(data, type, mime_type, location=None):
     if isinstance(data, list):
         content = [{
             "type": "text", 
-            "text": "Identify and analyze all food items in these images. Provide a combined analysis with total nutritional values for all items."
+            "text": "Identify and analyze all food items in these images. Provide per-item nutrition in fooditem_details and total meal nutrition in nutrition."
         }]
         for i, (img_data, img_type, img_mime) in enumerate(zip(data, type, mime_type)):
             content.append({
@@ -98,7 +92,7 @@ async def food_agent(data, type, mime_type, location=None):
             })
     else:
         content = [
-            {"type": "text", "text": "Identify and analyze all food items in this image. Provide total nutritional values."},
+            {"type": "text", "text": "Identify and analyze all food items in this image. Provide per-item nutrition in fooditem_details and total meal nutrition in nutrition."},
             {
                 "type": type,
                 "source_type": "base64",
@@ -131,13 +125,6 @@ async def food_agent(data, type, mime_type, location=None):
         usage = raw.usage_metadata if hasattr(raw, 'usage_metadata') else {}
         
         # Print metadata for debugging
-        print("=" * 50)
-        print("FOOD AGENT METADATA")
-        print("=" * 50)
-        # print(f"Response Metadata: {meta}")
-        # print(f"Usage Metadata: {usage}")
-        print("=" * 50)
-        
         # Convert Pydantic model to dict for AgentResponse
         structured_data = parsed.model_dump()
         
@@ -153,8 +140,8 @@ async def food_agent(data, type, mime_type, location=None):
         
         logger.info("Food agent completed successfully", 
                    image_count=image_count,
-                   food_items_count=len(structured_data.get('fooditems', [])),
-                   total_calories=structured_data.get('nutrition', {}).get('calories', 0),
+                   food_items_count=len(structured_data.get('fooditem_details', [])),
+                   total_calories=metric_value(structured_data.get('nutrition', {}).get('calories')) or 0,
                    token_usage=usage)
         
         return AgentResponse.success_response(structured_data, metadata=metadata)

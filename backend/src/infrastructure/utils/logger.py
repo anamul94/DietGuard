@@ -4,6 +4,23 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, Optional
 import os
+import uuid
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, BaseException):
+        return str(value)
+    return str(value)
 
 class CloudWatchFormatter(logging.Formatter):
     """Custom formatter for CloudWatch logs with structured JSON output"""
@@ -21,13 +38,13 @@ class CloudWatchFormatter(logging.Formatter):
         
         # Add extra fields if present
         if hasattr(record, 'extra_data'):
-            log_entry.update(record.extra_data)
+            log_entry.update(_json_safe(record.extra_data))
             
         # Add exception info if present
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
             
-        return json.dumps(log_entry)
+        return json.dumps(_json_safe(log_entry))
 
 class DietGuardLogger:
     """Centralized logger for DietGuard backend"""
@@ -54,6 +71,13 @@ class DietGuardLogger:
     
     def _log(self, level: str, message: str, extra_data: Optional[Dict[str, Any]] = None):
         """Internal logging method"""
+        payload = dict(extra_data or {})
+        exc_info = payload.pop("exc_info", None)
+        if exc_info is True:
+            exc_info = sys.exc_info()
+        elif not exc_info:
+            exc_info = None
+
         record = self.logger.makeRecord(
             name=self.logger.name,
             level=getattr(logging, level.upper()),
@@ -61,11 +85,11 @@ class DietGuardLogger:
             lno=0,
             msg=message,
             args=(),
-            exc_info=None
+            exc_info=exc_info
         )
         
-        if extra_data:
-            record.extra_data = extra_data
+        if payload:
+            record.extra_data = payload
             
         self.logger.handle(record)
     

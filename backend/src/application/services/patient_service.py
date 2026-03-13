@@ -169,8 +169,11 @@ class PatientService:
                     "email": encryption_service.decrypt(patient_pii.email_encrypted),
                     "phone_number": encryption_service.decrypt(patient_pii.phone_number_encrypted) if patient_pii.phone_number_encrypted else None
                 }
-                
-                # Log PHI access
+            except Exception as e:
+                logger.error(f"Failed to decrypt patient PII: {str(e)}", user_id=user_id)
+                raise ValueError("Failed to retrieve patient data")
+
+            try:
                 await HIPAAAuditService.log_phi_access(
                     db=db,
                     user_id=user_id,
@@ -179,10 +182,12 @@ class PatientService:
                     ip_address=ip_address,
                     user_agent=user_agent
                 )
-                
-            except Exception as e:
-                logger.error(f"Failed to decrypt patient PII: {str(e)}", user_id=user_id)
-                raise ValueError("Failed to retrieve patient data")
+            except Exception as audit_error:
+                logger.warning(
+                    "Failed to log PHI access",
+                    user_id=user_id,
+                    error=str(audit_error),
+                )
         
         # Build persona data
         persona_data = {}

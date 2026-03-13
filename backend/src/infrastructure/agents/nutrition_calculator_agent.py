@@ -1,19 +1,19 @@
 import asyncio
-import os
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from typing import List
-from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
+from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.nutrition_utils import extract_food_item_names, metric_value
 from .agent_response import AgentResponse
-from ...presentation.schemas.food_schemas import NutritionInfo
+from ...presentation.schemas.food_schemas import FoodNutritionBreakdownItem, NutritionInfo
 
 
 class NutritionCalculation(BaseModel):
     """Complete nutrition calculation for food items"""
-    fooditems: List[str] = Field(
-        description="List of food items that were analyzed (echoed back from input)"
+    fooditem_details: List[FoodNutritionBreakdownItem] = Field(
+        default_factory=list,
+        description="Per-item nutrition breakdown for each food item"
     )
     nutrition: NutritionInfo = Field(description="Total nutritional information for all food items combined")
 
@@ -36,30 +36,20 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
     has_reference = old_food_analysis is not None
     logger.info("Nutrition calculator agent invoked", item_count=item_count, has_reference=has_reference)
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Nutrition calculator agent configuration error - missing AWS credentials", 
-                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
-        return AgentResponse.error_response("Configuration error. Please try again later.")
-
     try:
-        llm = init_chat_model(
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
-            temperature=0.1,
-        )
+        config = get_bedrock_config()
+        llm = create_bedrock_chat_model(temperature=0.1)
         # Apply structured output schema with raw response for metadata
         structured_llm = llm.with_structured_output(NutritionCalculation, include_raw=True)
     except Exception as e:
-        logger.error("Nutrition calculator agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
+        logger.error(
+            "Nutrition calculator agent LLM initialization failed",
+            error=str(e),
+            exception_type=type(e).__name__,
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+        )
         return AgentResponse.error_response("Nutrition calculation service is temporarily unavailable. Please try again later.")
 
     # Build system message with optional reference context
@@ -73,9 +63,12 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
         "\n2. **Quantities**: Parse quantities from descriptions (e.g., '1 grilled chicken' = ~150g, '2 slices pizza' = ~200g)"
         "\n3. **Standard Servings**: Use standard serving sizes when quantities are not specified"
         "\n4. **Ingredients**: Account for all visible ingredients and preparation methods"
-        "\n5. **Aggregation**: Provide TOTAL nutrition for ALL items combined"
-        "\n6. **Clinical Standards**: Ensure values are realistic and medically sound"
-        "\n7. **Precision**: Round to whole numbers for calories, use grams (g) for macros"
+        "\n5. **Per-item breakdown**: Return `fooditem_details` with one entry per food item and that item's nutrition"
+        "\n6. **Aggregation**: Provide TOTAL nutrition for ALL items combined"
+        "\n7. **Clinical Standards**: Ensure values are realistic and medically sound"
+        "\n8. **Precision**: Round to whole numbers for calories, use grams (g) for macros"
+        "\n9. **Output format**: Each nutrition field must be an object with `value` and `unit`."
+        "\n   Example: calories={\"value\": 450, \"unit\": \"kcal\"}, protein={\"value\": 35, \"unit\": \"g\"}"
     )
     
     # Add reference context if old food analysis is provided
@@ -114,7 +107,7 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
     user_content = f"Calculate the total nutritional values for these food items:\n\n{fooditems_text}\n\n"
     
     if old_food_analysis:
-        old_items = old_food_analysis.get("fooditems", [])
+        old_items = extract_food_item_names(old_food_analysis)
         old_nutrition = old_food_analysis.get("nutrition", {})
         
         reference_text = (
@@ -126,7 +119,10 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
         )
         user_content += reference_text
     
-    user_content += "Provide clinically accurate nutrition data based on standard serving sizes and the quantities mentioned."
+    user_content += (
+        "Provide clinically accurate nutrition data based on standard serving sizes and the quantities mentioned. "
+        "Return both item-level nutrition in `fooditem_details` and total meal nutrition in `nutrition`."
+    )
     
     message = {
         "role": "user",
@@ -174,7 +170,7 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
         
         logger.info("Nutrition calculator agent completed successfully", 
                    item_count=item_count,
-                   total_calories=structured_data.get('nutrition', {}).get('calories', 0),
+                   total_calories=metric_value(structured_data.get('nutrition', {}).get('calories')) or 0,
                    token_usage=usage)
         
         return AgentResponse.success_response(structured_data, metadata=metadata)

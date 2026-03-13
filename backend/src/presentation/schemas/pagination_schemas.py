@@ -31,8 +31,19 @@ class PaginatedNutritionResponse(BaseModel):
                         "created_at": "2025-12-18T09:30:00+00:00",
                         "data": {
                             "food_analysis": {
-                                "fooditems": ["pizza with cheese", "grilled chicken"],
-                                "nutrition": {"calories": 650, "protein": "45g"}
+                                "fooditem_details": [
+                                    {
+                                        "name": "pizza with cheese",
+                                        "nutrition": {
+                                            "calories": {"value": 320, "unit": "kcal"},
+                                            "protein": {"value": 12, "unit": "g"}
+                                        }
+                                    }
+                                ],
+                                "nutrition": {
+                                    "calories": {"value": 650, "unit": "kcal"},
+                                    "protein": {"value": 45, "unit": "g"}
+                                }
                             },
                             "meal_type": "breakfast",
                             "timestamp": "2025-12-18T09:30:00+00:00"

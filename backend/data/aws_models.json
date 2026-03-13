@@ -1,6 +1,14 @@
 [
   {
     "id": 1,
+    "name": "Global Anthropic Claude Sonnet 4.6",
+    "model_id": "arn:aws:bedrock:ap-south-1:686255973607:inference-profile/global.anthropic.claude-sonnet-4-6",
+    "model_arn": "arn:aws:bedrock:ap-south-1:686255973607:inference-profile/global.anthropic.claude-sonnet-4-6",
+    "provider": "aws",
+    "primary": true
+  },
+  {
+    "id": 2,
     "name": "DeepSeek-V3.1",
     "model_id": "deepseek.v3-v1:0",
     "model_arn": "arn:aws:bedrock:ap-south-1::foundation-model/deepseek.v3-v1:0",

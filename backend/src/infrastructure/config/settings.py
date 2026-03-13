@@ -26,6 +26,8 @@ class Settings:
     # AWS
     AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_SESSION_TOKEN: Optional[str] = os.getenv("AWS_SESSION_TOKEN")
+    AWS_PROFILE: Optional[str] = os.getenv("AWS_PROFILE")
     AWS_REGION: str = os.getenv("AWS_REGION", "ap-south-1")
     
     # Redis

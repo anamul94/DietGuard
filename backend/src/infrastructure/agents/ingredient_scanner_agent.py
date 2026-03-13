@@ -1,8 +1,6 @@
 import asyncio
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from ..utils.logger import logger
+from ..utils.bedrock_utils import create_bedrock_chat_model, get_bedrock_config
 from .agent_response import AgentResponse
 from ...presentation.schemas.ingredient_schemas import IngredientAnalysis
 
@@ -28,30 +26,22 @@ async def ingredient_scanner_agent(data, type, mime_type):
     """
     logger.info("Ingredient scanner agent invoked")
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Ingredient scanner agent configuration error - missing AWS credentials", 
-                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
-        return AgentResponse.error_response("Configuration error. Please try again later.")
-
     try:
-        llm = init_chat_model(
-            "apac.anthropic.claude-sonnet-4-20250514-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
+        config = get_bedrock_config()
+        llm = create_bedrock_chat_model(
             temperature=0.1,
         )
         # Apply structured output schema with raw response for metadata
         structured_llm = llm.with_structured_output(IngredientAnalysis, include_raw=True)
     except Exception as e:
-        logger.error("Ingredient scanner agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
+        logger.error(
+            "Ingredient scanner agent LLM initialization failed",
+            error=str(e),
+            exception_type=type(e).__name__,
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+        )
         return AgentResponse.error_response("Ingredient analysis service is temporarily unavailable. Please try again later.")
 
     system_message = {

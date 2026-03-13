@@ -134,40 +134,45 @@ See `.env.example` for complete configuration options.
 
 ## API Endpoints
 
-### Authentication
-- `POST /api/v1/auth/signup` - Register new user
-- `POST /api/v1/auth/signin` - User login
-- `POST /api/v1/auth/refresh-token` - Refresh access token
-- `POST /api/v1/auth/forgot-password` - Request password reset
-- `POST /api/v1/auth/reset-password` - Reset password with token
+Canonical API prefix:
 
-### User Management
-- `GET /api/v1/users/me` - Get current user profile
-- `GET /api/v1/users/me/usage` - Check upload limits
-- `PUT /api/v1/users/me` - Update profile
-- `DELETE /api/v1/users/me` - Delete account (soft delete)
+- `/api/v1`
 
-### Food & Report Analysis (Requires Authentication)
-- `POST /upload_food/` - Upload food images for analysis
-- `POST /upload_report/` - Upload medical reports
-- `GET /get_report/{user_id}` - Get report data
-- `GET /get_nutrition/{user_id}` - Get nutrition data
-- `DELETE /delete_report/{user_id}` - Delete user data
+Primary endpoint groups:
 
-### Payments (Placeholder)
-- `POST /api/v1/payments` - Create payment record
-- `GET /api/v1/payments/history` - View payment history
+- Authentication: `/api/v1/auth/*`
+- AI analysis: `/api/v1/ai/*`
+- Health timeline: `/api/v1/health/*`
+- Users: `/api/v1/users/*`
+- Packages: `/api/v1/packages/*`
+- Payments: `/api/v1/payment*`
+- Admin: `/api/v1/admin/*`
 
-### Admin (Requires Admin Role)
-- `GET /api/v1/admin/users` - List all users
-- `GET /api/v1/admin/audit-logs` - View audit logs
-- `PUT /api/v1/admin/users/{user_id}/role` - Update user role
+Key current endpoints:
+
+- `POST /api/v1/ai/upload-food`
+- `POST /api/v1/ai/upload-report`
+- `POST /api/v1/ai/nutrition-advice`
+- `POST /api/v1/ai/calculate-nutrition`
+- `GET /api/v1/health/profile/current`
+- `POST /api/v1/health/meals/draft-from-image`
+- `POST /api/v1/health/meals/confirm`
+- `POST /api/v1/health/vitals`
+- `GET /api/v1/health/insights/daily`
+- `GET /api/v1/health/insights/weekly`
+
+Detailed reference:
+
+- Repository doc: `../docs/api-reference.md`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
 
 ## API Documentation
 
 Interactive API documentation is available at:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
+- **Repository API Reference**: `../docs/api-reference.md`
 
 ## Architecture
 

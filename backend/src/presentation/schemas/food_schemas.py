@@ -5,7 +5,10 @@ Contains models for food items, nutritional information, and food analysis.
 """
 
 from pydantic import BaseModel, Field
-from typing import List
+from pydantic import field_validator
+from typing import Any, List
+
+from ...infrastructure.utils.nutrition_utils import normalize_nutrition_metric
 
 
 class FoodItem(BaseModel):
@@ -24,48 +27,125 @@ class FoodItem(BaseModel):
         }
 
 
+class NutritionMetric(BaseModel):
+    """Model for a single nutrition metric with explicit units."""
+
+    value: float = Field(..., description="Numeric nutrition value", ge=0)
+    unit: str = Field(..., description="Unit for the nutrition value")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "value": 12,
+                "unit": "g",
+            }
+        }
+
+
 class NutritionInfo(BaseModel):
     """Model for nutritional information"""
-    calories: int = Field(..., description="Total calories", ge=0)
-    protein: str = Field(..., description="Protein content (e.g., '45g')")
-    carbohydrates: str = Field(..., description="Carbohydrate content (e.g., '12g')")
-    fat: str = Field(..., description="Fat content (e.g., '48g')")
-    fiber: str = Field(..., description="Fiber content (e.g., '1g')")
-    sugar: str = Field(..., description="Sugar content (e.g., '8g')")
+    calories: NutritionMetric = Field(..., description="Total calories with value and unit")
+    protein: NutritionMetric = Field(..., description="Protein content with value and unit")
+    carbohydrates: NutritionMetric = Field(..., description="Carbohydrate content with value and unit")
+    fat: NutritionMetric = Field(..., description="Fat content with value and unit")
+    fiber: NutritionMetric = Field(..., description="Fiber content with value and unit")
+    sugar: NutritionMetric = Field(..., description="Sugar content with value and unit")
+
+    @field_validator("calories", mode="before")
+    @classmethod
+    def normalize_calories(cls, value: Any) -> Any:
+        return normalize_nutrition_metric(value, "kcal")
+
+    @field_validator("protein", "carbohydrates", "fat", "fiber", "sugar", mode="before")
+    @classmethod
+    def normalize_gram_metrics(cls, value: Any) -> Any:
+        return normalize_nutrition_metric(value, "g")
     
     class Config:
         json_schema_extra = {
             "example": {
-                "calories": 650,
-                "protein": "45g",
-                "carbohydrates": "12g",
-                "fat": "48g",
-                "fiber": "1g",
-                "sugar": "8g"
+                "calories": {"value": 650, "unit": "kcal"},
+                "protein": {"value": 45, "unit": "g"},
+                "carbohydrates": {"value": 12, "unit": "g"},
+                "fat": {"value": 48, "unit": "g"},
+                "fiber": {"value": 1, "unit": "g"},
+                "sugar": {"value": 8, "unit": "g"}
+            }
+        }
+
+
+class FoodNutritionBreakdownItem(BaseModel):
+    """Item-level nutrition estimate for a single food item."""
+
+    name: str = Field(..., description="Name of the food item")
+    quantity: str | None = Field(None, description="Estimated quantity or serving size")
+    preparation: str | None = Field(None, description="Preparation method if identifiable")
+    nutrition: NutritionInfo = Field(..., description="Estimated nutrition for this individual item")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Pizza with cheese and tomato",
+                "quantity": "2 slices",
+                "preparation": "Baked",
+                "nutrition": {
+                    "calories": {"value": 320, "unit": "kcal"},
+                    "protein": {"value": 12, "unit": "g"},
+                    "carbohydrates": {"value": 38, "unit": "g"},
+                    "fat": {"value": 14, "unit": "g"},
+                    "fiber": {"value": 2, "unit": "g"},
+                    "sugar": {"value": 4, "unit": "g"}
+                }
             }
         }
 
 
 class FoodAnalysis(BaseModel):
     """Structured model for food analysis"""
-    fooditems: List[str] = Field(..., description="List of identified food items with detailed descriptions including ingredients and preparation methods")
+    fooditem_details: List[FoodNutritionBreakdownItem] = Field(
+        default_factory=list,
+        description="Per-item nutrition estimates for each identified food item",
+    )
     nutrition: NutritionInfo = Field(..., description="Aggregated nutritional information")
     
     class Config:
         json_schema_extra = {
             "example": {
-                "fooditems": [
-                    "pizza with cheese and tomato",
-                    "grilled chicken with naan roti",
-                    "caesar salad with croutons and parmesan"
+                "fooditem_details": [
+                    {
+                        "name": "pizza with cheese and tomato",
+                        "quantity": "2 slices",
+                        "preparation": "baked",
+                        "nutrition": {
+                            "calories": {"value": 320, "unit": "kcal"},
+                            "protein": {"value": 12, "unit": "g"},
+                            "carbohydrates": {"value": 38, "unit": "g"},
+                            "fat": {"value": 14, "unit": "g"},
+                            "fiber": {"value": 2, "unit": "g"},
+                            "sugar": {"value": 4, "unit": "g"}
+                        }
+                    },
+                    {
+                        "name": "grilled chicken with naan roti",
+                        "quantity": "1 plate",
+                        "preparation": "grilled",
+                        "nutrition": {
+                            "calories": {"value": 330, "unit": "kcal"},
+                            "protein": {"value": 33, "unit": "g"},
+                            "carbohydrates": {"value": 20, "unit": "g"},
+                            "fat": {"value": 12, "unit": "g"},
+                            "fiber": {"value": 1, "unit": "g"},
+                            "sugar": {"value": 2, "unit": "g"}
+                        }
+                    }
                 ],
                 "nutrition": {
-                    "calories": 650,
-                    "protein": "45g",
-                    "carbohydrates": "12g",
-                    "fat": "48g",
-                    "fiber": "1g",
-                    "sugar": "8g"
+                    "calories": {"value": 650, "unit": "kcal"},
+                    "protein": {"value": 45, "unit": "g"},
+                    "carbohydrates": {"value": 12, "unit": "g"},
+                    "fat": {"value": 48, "unit": "g"},
+                    "fiber": {"value": 1, "unit": "g"},
+                    "sugar": {"value": 8, "unit": "g"}
                 }
             }
         }
@@ -85,17 +165,28 @@ class FoodUploadResponse(BaseModel):
                 "files_processed": 1,
                 "filenames": ["food_image.jpg"],
                 "food_analysis": {
-                    "fooditems": [
-                        "pizza with cheese and tomato",
-                        "grilled chicken with naan roti"
+                    "fooditem_details": [
+                        {
+                            "name": "pizza with cheese and tomato",
+                            "quantity": "2 slices",
+                            "preparation": "baked",
+                            "nutrition": {
+                                "calories": {"value": 320, "unit": "kcal"},
+                                "protein": {"value": 12, "unit": "g"},
+                                "carbohydrates": {"value": 38, "unit": "g"},
+                                "fat": {"value": 14, "unit": "g"},
+                                "fiber": {"value": 2, "unit": "g"},
+                                "sugar": {"value": 4, "unit": "g"}
+                            }
+                        }
                     ],
                     "nutrition": {
-                        "calories": 650,
-                        "protein": "45g",
-                        "carbohydrates": "12g",
-                        "fat": "48g",
-                        "fiber": "1g",
-                        "sugar": "8g"
+                        "calories": {"value": 650, "unit": "kcal"},
+                        "protein": {"value": 45, "unit": "g"},
+                        "carbohydrates": {"value": 12, "unit": "g"},
+                        "fat": {"value": 48, "unit": "g"},
+                        "fiber": {"value": 1, "unit": "g"},
+                        "sugar": {"value": 8, "unit": "g"}
                     }
                 }
             }

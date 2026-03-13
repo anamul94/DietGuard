@@ -70,11 +70,23 @@ REACT_APP_DOMAIN=localhost:3000
 
 ## API Endpoints
 
-- `POST /upload_report/` - Upload medical reports
-- `POST /upload_food/` - Upload food images
-- `GET /get_report/{user_id}` - Get report data
-- `GET /get_nutrition/{user_id}` - Get nutrition data
-- `DELETE /delete_report/{user_id}` - Delete user data
+Canonical backend APIs now live under `/api/v1`.
+
+Primary endpoint groups:
+
+- `/api/v1/auth/*`
+- `/api/v1/ai/*`
+- `/api/v1/health/*`
+- `/api/v1/users/*`
+- `/api/v1/packages/*`
+- `/api/v1/payment*`
+- `/api/v1/admin/*`
+
+Detailed API reference:
+
+- `docs/api-reference.md`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
 
 ## Architecture
 

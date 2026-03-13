@@ -5,9 +5,10 @@ This module contains API endpoints for AI-powered food and medical report analys
 All endpoints require authentication and enforce subscription limits.
 """
 
+from typing import Annotated, List, Optional
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status, Query
 from fastapi.responses import JSONResponse
-from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.food_schemas import FoodUploadResponse, FoodAnalysis
@@ -19,20 +20,44 @@ from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User
 from ...infrastructure.auth.dependencies import get_current_active_user
 from ...application.services.subscription_service import SubscriptionService
+from ...application.services.health_utils import merge_dynamic_reports, parse_llm_json_payload
 from ...application.services.token_usage_service import TokenUsageService
+from ...application.services.health_timeline_service import HealthTimelineService
 from ...infrastructure.utils.logger import logger
+from ...infrastructure.utils.nutrition_utils import extract_food_item_names, format_food_analysis_summary
 from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
 from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.summary_agent import summary_agent as generate_summary
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
-from ...infrastructure.agents.report_merge_agent import report_merge_agent  # NEW
 from ...infrastructure.agents.ingredient_scanner_agent import ingredient_scanner_agent
 from ...infrastructure.database.postgres_client import PostgresClient
 
 
 router = APIRouter(tags=["AI Agents"])
+
+MULTI_FILE_UPLOAD_SCHEMA = {
+    "content": {
+        "multipart/form-data": {
+            "schema": {
+                "type": "object",
+                "required": ["files"],
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "binary",
+                        },
+                        "description": "One or more uploaded files",
+                    }
+                },
+            }
+        }
+    },
+    "required": True,
+}
 
 
 @router.post(
@@ -54,14 +79,14 @@ router = APIRouter(tags=["AI Agents"])
     **Process:**
     1. Images are analyzed by AI food recognition agent
     2. Food items are identified with quantities
-    3. Nutritional information is calculated
-    4. Structured response with food_items and nutrition
-    
+    3. Per-item and total nutritional information is calculated
+    4. Structured response includes item names, item-level nutrition, and meal totals
+
     **Returns:**
     - user_email
     - files_processed count
     - filenames list
-    - food_analysis object with food_items and nutrition
+    - food_analysis object with `fooditem_details` and total `nutrition`
     """,
     responses={
         200: {
@@ -79,10 +104,11 @@ router = APIRouter(tags=["AI Agents"])
         422: {
             "description": "Validation Error - Invalid file format"
         }
-    }
+    },
+    openapi_extra={"requestBody": MULTI_FILE_UPLOAD_SCHEMA},
 )
 async def upload_food(
-    files: List[UploadFile] = File(..., description="Food images (JPG, PNG)"),
+    files: Annotated[List[UploadFile], File(description="Food images (JPG, PNG)")],
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -130,7 +156,7 @@ async def upload_food(
         from ...application.services.patient_service import PatientService
         user_location = None
         try:
-            patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+            patient_profile = await PatientService.get_patient_profile(db, current_user.id)
             persona_data = patient_profile.get("persona", {})
             user_location = persona_data.get("current_location")
             if user_location:
@@ -344,10 +370,11 @@ async def scan_ingredients(
     response_model=None,  # Allow flexible response format
     status_code=status.HTTP_200_OK,
     summary="Upload Medical Reports",
-    description="Upload medical reports (PDF or images) for AI-powered analysis with intelligent merging"
+    description="Upload medical reports (PDF or images) for AI-powered analysis with intelligent merging",
+    openapi_extra={"requestBody": MULTI_FILE_UPLOAD_SCHEMA},
 )
 async def upload_report(
-    files: List[UploadFile] = File(..., description="Medical reports (PDF or images)"),
+    files: Annotated[List[UploadFile], File(description="Medical reports (PDF or images)")],
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -421,11 +448,8 @@ async def upload_report(
                 total_tokens += agent_response.metadata.get("total_tokens", 0)
             
             # Parse JSON output from report_agent (EHR format)
-            import json
-            try:
-                analysis_dict = json.loads(analysis)
-            except json.JSONDecodeError:
-                # If parsing fails, keep as string (fallback for non-JSON responses)
+            analysis_dict = parse_llm_json_payload(analysis)
+            if not isinstance(analysis_dict, dict):
                 analysis_dict = {"raw_text": analysis}
             
             filenames.append(file.filename)
@@ -437,118 +461,27 @@ async def upload_report(
         
         # Medical reports don't need nutritional summary
         # The extracted EHR data from report_agent is sufficient
-        combined_summary = None
-        
-        
         # Check if user has existing report
         postgres_client = PostgresClient()
         existing_report_data = await postgres_client.get_report_data(str(current_user.id))
         
         from datetime import datetime, timezone
         
+        previous_version = 0
         if existing_report_data:
-            try:
-                # User has existing report - update overlapping fields
-                logger.info("Existing report found, updating fields", user_id=str(current_user.id))
-                
-                old_report = existing_report_data.get("data", {})
-                
-                # Handle both old and new data structures
-                if "ehr_data" in old_report:
-                    old_ehr = old_report.get("ehr_data", {})
-                elif "individual_analyses" in old_report:
-                    # Old format - migrate on the fly
-                    old_analyses = old_report.get("individual_analyses", [])
-                    if old_analyses and isinstance(old_analyses, list) and len(old_analyses) > 0:
-                        first_analysis = old_analyses[0]
-                        if isinstance(first_analysis, dict):
-                            analysis_content = first_analysis.get("analysis", {})
-                            if isinstance(analysis_content, str):
-                                # Try to parse JSON string
-                                import json
-                                try:
-                                    old_ehr = json.loads(analysis_content)
-                                except:
-                                    old_ehr = {}
-                            else:
-                                old_ehr = analysis_content if isinstance(analysis_content, dict) else {}
-                        else:
-                            old_ehr = {}
-                    else:
-                        old_ehr = {}
-                else:
-                    old_ehr = {}
-                
-                # Get new EHR data from first analysis
-                new_ehr = individual_analyses[0]["analysis"] if individual_analyses else {}
+            previous_version = int(existing_report_data.get("data", {}).get("version") or 0)
 
-                
-                # Simple merge: Update overlapping fields
-                if isinstance(old_ehr, dict) and isinstance(new_ehr, dict):
-                    # Update result array (lab tests)
-                    old_results = old_ehr.get("result", [])
-                    new_results = new_ehr.get("result", [])
-                    # Ensure results are lists, not strings
-                    if not isinstance(old_results, list):
-                        old_results = []
-                    if not isinstance(new_results, list):
-                        new_results = []
-                    
-                    # Create map of old results by testName
-                    old_results_map = {r.get("testName"): r for r in old_results if isinstance(r, dict)}
-                    
-                    # Update overlapping tests, add new ones
-                    for new_test in new_results:
-                        if isinstance(new_test, dict):
-                            test_name = new_test.get("testName")
-                            if test_name:
-                                old_results_map[test_name] = new_test  # Update or add
-                    
-                    # Build merged EHR
-                    merged_ehr = {
-                        "resourceType": new_ehr.get("resourceType", "DiagnosticReport"),
-                        "status": "final",
-                        "effectiveDateTime": new_ehr.get("effectiveDateTime"),
-                        "result": list(old_results_map.values()),
-                        "clinicalFindings": new_ehr.get("clinicalFindings", []),
-                        "diagnosticImpressions": new_ehr.get("diagnosticImpressions", []),
-                        "version": old_report.get("version", 0) + 1,
-                        "lastUpdated": datetime.now(timezone.utc).isoformat()
-                    }
-                    
-                    report_data = {
-                        "ehr_data": merged_ehr,
-                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                        "filenames": filenames,
-                        "version": merged_ehr["version"]
-                    }
-                else:
-                    # Fallback: save as new
-                    report_data = {
-                        "ehr_data": new_ehr,
-                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                        "filenames": filenames,
-                        "version": 1
-                    }
-            except Exception as e:
-                # Merge failed - log error and save as new
-                logger.error(f"Merge failed, saving as new: {str(e)}", user_id=str(current_user.id))
-                new_ehr = individual_analyses[0]["analysis"] if individual_analyses else {}
-                report_data = {
-                    "ehr_data": new_ehr,
-                    "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                    "filenames": filenames,
-                    "version": 1
-                }
-        else:
-            # No existing report - save as new
-            new_ehr = individual_analyses[0]["analysis"] if individual_analyses else {}
-            report_data = {
-                "ehr_data": new_ehr,
-                "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                "filenames": filenames,
-                "version": 1
-            }
+        combined_report = merge_dynamic_reports(
+            [item.get("analysis", {}) for item in individual_analyses],
+            filenames=filenames,
+        )
+        report_data = {
+            "ehr_data": combined_report,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "filenames": filenames,
+            "version": previous_version + 1,
+            "individual_analyses": individual_analyses,
+        }
         
         # Save to database
         await postgres_client.save_report_data(
@@ -556,12 +489,33 @@ async def upload_report(
             data=report_data
         )
         logger.info("Report saved successfully", user_id=str(current_user.id), version=report_data.get("version"))
+
+        structured_profile = None
+        try:
+            structured_profile = await HealthTimelineService.sync_structured_report_data(
+                db=db,
+                user_id=current_user.id,
+                parsed_report=report_data.get("ehr_data") or {},
+                filenames=filenames,
+            )
+            logger.info(
+                "Structured report data synced successfully",
+                user_id=str(current_user.id),
+                structured_version=structured_profile.get("version"),
+            )
+        except Exception as structured_error:
+            logger.error(
+                "Structured report sync failed",
+                user_id=str(current_user.id),
+                error=str(structured_error),
+                exc_info=True,
+            )
         
         # Track token usage for report extraction
         await TokenUsageService.track_token_usage(
             db=db,
             user=current_user,
-            model_name="claude-3.7-sonnet",
+            model_name="claude-sonnet-4.6",
             agent_type="report_agent",
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
@@ -582,7 +536,8 @@ async def upload_report(
             "filenames": filenames,
             "ehr_data": report_data.get("ehr_data"),
             "version": report_data.get("version"),
-            "uploaded_at": report_data.get("uploaded_at")
+            "uploaded_at": report_data.get("uploaded_at"),
+            "structured_health_profile": structured_profile,
         }
 
         
@@ -660,14 +615,11 @@ async def get_nutrition_advice(
             logger.warning("Nutrition query limit exceeded", user_id=str(current_user.id), error=str(e))
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
         
-        # Import date utility
-        from ...infrastructure.utils.date_utils import calculate_age
         from ...application.services.patient_service import PatientService
         from datetime import datetime, timezone
-        import json
         
         # Get patient profile data (includes age, gender, etc.)
-        patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+        patient_profile = await PatientService.get_patient_profile(db, current_user.id)
         
         # Extract patient data
         persona_data = patient_profile.get("persona", {})
@@ -683,12 +635,15 @@ async def get_nutrition_advice(
         postgres_client = PostgresClient()
         report_data = await postgres_client.get_report_data(str(current_user.id))
         medical_report = ""
-        
-        if report_data:
-            # Extract medical report summary from stored data
+        health_profile = await HealthTimelineService.get_current_health_profile(db, current_user.id)
+
+        if health_profile["report"]["version"]:
+            medical_report = health_profile["health_context_summary"]
+            logger.info("Structured medical profile found for user", user_id=str(current_user.id))
+        elif report_data:
             data = report_data.get("data", {})
-            medical_report = data.get("combined_summary", "")
-            logger.info("Medical report found for user", user_id=str(current_user.id))
+            medical_report = str(data.get("combined_summary") or data.get("ehr_data") or "")
+            logger.info("Legacy medical report found for user", user_id=str(current_user.id))
         else:
             logger.info("No medical report found for user", user_id=str(current_user.id))
         
@@ -719,9 +674,9 @@ async def get_nutrition_advice(
                    meal_time=request.meal_time,
                    meal_date=str(meal_date))
         
-        # Extract only fooditems for nutritionist agent
-        fooditems = food_analysis_data.get("fooditems", [])
-        fooditems_str = ", ".join(fooditems) if fooditems else "No food items identified"
+        # Build a readable meal summary from the item-level nutrition structure
+        fooditems = extract_food_item_names(food_analysis_data)
+        fooditems_str = format_food_analysis_summary(food_analysis_data)
         
         # Extract nutrition values to pass to nutritionist agent
         nutrition_values = food_analysis_data.get("nutrition", {})
@@ -730,11 +685,11 @@ async def get_nutrition_advice(
                    age=age, 
                    gender=gender, 
                    has_medical_report=bool(medical_report),
-                   fooditems_count=len(fooditems),
+                   food_item_count=len(fooditems),
                    has_nutrition=bool(nutrition_values),
                    meal_time=request.meal_time)
         
-        # Call nutritionist agent with fooditems, nutrition values, and meal timing
+        # Call nutritionist agent with the structured meal summary, nutrition values, and meal timing
         nutritionist_response = await nutritionist_agent(
             food_analysis=fooditems_str,
             medical_report=medical_report,
@@ -824,7 +779,7 @@ async def get_nutrition_advice(
     
     **Returns:**
     - food_analysis object containing:
-      - fooditems: List of food items analyzed
+      - fooditem_details: Per-item nutrition values for each identified food item
       - nutrition: Clinically accurate nutrition values
     
     **Note:** This endpoint tracks usage but does not count against daily limits.
@@ -911,7 +866,7 @@ async def calculate_nutrition(
         
         return NutritionCalculationResponse(
             food_analysis={
-                "fooditems": nutrition_data.get("fooditems", []),
+                "fooditem_details": nutrition_data.get("fooditem_details", []),
                 "nutrition": nutrition_data.get("nutrition", {})
             }
         )
@@ -948,7 +903,7 @@ async def get_my_nutrition_data(
     """Get saved nutrition data for authenticated user"""
     logger.info("Nutrition data requested", user_id=str(current_user.id))
     postgres_client = PostgresClient()
-    data = await postgres_client.get_nutrition_data(current_user.email)
+    data = await postgres_client.get_nutrition_data(str(current_user.id))
     
     if not data:
         logger.warning("Nutrition data not found", user_id=str(current_user.id))
@@ -979,7 +934,7 @@ async def get_my_report_data(
     """Get saved report data for authenticated user"""
     logger.info("Report data requested", user_id=str(current_user.id))
     postgres_client = PostgresClient()
-    data = await postgres_client.get_report_data(current_user.email)
+    data = await postgres_client.get_report_data(str(current_user.id))
     
     if not data:
         logger.warning("Report data not found", user_id=str(current_user.id))
@@ -1008,7 +963,7 @@ async def delete_my_report_data(
     """Delete saved report data for authenticated user"""
     logger.info("Report deletion requested", user_id=str(current_user.id))
     postgres_client = PostgresClient()
-    success = await postgres_client.delete_report_data(current_user.email)
+    success = await postgres_client.delete_report_data(str(current_user.id))
     
     if not success:
         logger.warning("Report data not found for deletion", user_id=str(current_user.id))

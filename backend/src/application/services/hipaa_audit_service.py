@@ -14,6 +14,14 @@ from ...infrastructure.database.database import Base
 from ...infrastructure.utils.logger import logger
 
 
+def _coerce_uuid(value: Any) -> Optional[uuid.UUID]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
 class HIPAAAuditLog(Base):
     """
     HIPAA-compliant audit log for PHI access and modifications.
@@ -64,8 +72,8 @@ class HIPAAAuditService:
     @staticmethod
     async def log_phi_access(
         db: AsyncSession,
-        user_id: Optional[str],
-        patient_user_id: str,
+        user_id: Optional[Any],
+        patient_user_id: Any,
         resource: str,
         field_accessed: Optional[str] = None,
         ip_address: Optional[str] = None,
@@ -86,8 +94,8 @@ class HIPAAAuditService:
             extra_data: Additional metadata
         """
         audit_log = HIPAAAuditLog(
-            user_id=uuid.UUID(user_id) if user_id else None,
-            patient_user_id=uuid.UUID(patient_user_id),
+            user_id=_coerce_uuid(user_id),
+            patient_user_id=_coerce_uuid(patient_user_id),
             action="phi_access",
             resource=resource,
             field_accessed=field_accessed,
@@ -110,8 +118,8 @@ class HIPAAAuditService:
     @staticmethod
     async def log_phi_modification(
         db: AsyncSession,
-        user_id: str,
-        patient_user_id: str,
+        user_id: Any,
+        patient_user_id: Any,
         resource: str,
         action: str,  # 'phi_create', 'phi_update', 'phi_delete'
         fields_modified: Optional[list] = None,
@@ -140,8 +148,8 @@ class HIPAAAuditService:
             extra_data['fields_modified'] = fields_modified
         
         audit_log = HIPAAAuditLog(
-            user_id=uuid.UUID(user_id),
-            patient_user_id=uuid.UUID(patient_user_id),
+            user_id=_coerce_uuid(user_id),
+            patient_user_id=_coerce_uuid(patient_user_id),
             action=action,
             resource=resource,
             ip_address=ip_address,
@@ -164,7 +172,7 @@ class HIPAAAuditService:
     @staticmethod
     async def log_encryption_event(
         db: AsyncSession,
-        user_id: str,
+        user_id: Any,
         action: str,  # 'encrypt', 'decrypt'
         resource: str,
         success: bool = True,
@@ -186,8 +194,8 @@ class HIPAAAuditService:
             extra_data['error'] = error_message
         
         audit_log = HIPAAAuditLog(
-            user_id=uuid.UUID(user_id),
-            patient_user_id=uuid.UUID(user_id),
+            user_id=_coerce_uuid(user_id),
+            patient_user_id=_coerce_uuid(user_id),
             action=f"phi_{action}",
             resource=resource,
             extra_data=extra_data,
@@ -207,7 +215,7 @@ class HIPAAAuditService:
     @staticmethod
     async def log_anonymization(
         db: AsyncSession,
-        patient_user_id: str,
+        patient_user_id: Any,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
     ) -> None:
@@ -221,8 +229,8 @@ class HIPAAAuditService:
             user_agent: User agent string
         """
         audit_log = HIPAAAuditLog(
-            user_id=uuid.UUID(patient_user_id),
-            patient_user_id=uuid.UUID(patient_user_id),
+            user_id=_coerce_uuid(patient_user_id),
+            patient_user_id=_coerce_uuid(patient_user_id),
             action="phi_anonymize",
             resource="patient_data",
             ip_address=ip_address,

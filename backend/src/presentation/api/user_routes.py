@@ -60,7 +60,7 @@ async def get_current_user_profile(
     # Get patient data from related tables
     from ...application.services.patient_service import PatientService
     
-    patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+    patient_profile = await PatientService.get_patient_profile(db, current_user.id)
     persona = patient_profile.get("persona", {})
     pii = patient_profile.get("pii", {})
     
@@ -163,7 +163,7 @@ async def update_profile(
     from sqlalchemy import select
     
     # Get current patient data
-    patient_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+    patient_profile = await PatientService.get_patient_profile(db, current_user.id)
     pii = patient_profile.get("pii", {})
     
     changes = {}
@@ -259,7 +259,7 @@ async def update_profile(
     logger.info("User profile updated", user_id=str(current_user.id), changes=changes)
     
     # Get updated profile
-    updated_profile = await PatientService.get_patient_profile(db, str(current_user.id))
+    updated_profile = await PatientService.get_patient_profile(db, current_user.id)
     updated_persona = updated_profile.get("persona", {})
     updated_pii = updated_profile.get("pii", {})
     

@@ -29,14 +29,39 @@ class NutritionCalculationRequest(BaseModel):
                     "2 slices pizza with cheese and tomato"
                 ],
                 "old_food_analysis": {
-                    "fooditems": ["1 grilled chicken", "1 naan roti"],
+                    "fooditem_details": [
+                        {
+                            "name": "grilled chicken",
+                            "quantity": "1 serving",
+                            "nutrition": {
+                                "calories": {"value": 320, "unit": "kcal"},
+                                "protein": {"value": 30, "unit": "g"},
+                                "carbohydrates": {"value": 0, "unit": "g"},
+                                "fat": {"value": 14, "unit": "g"},
+                                "fiber": {"value": 0, "unit": "g"},
+                                "sugar": {"value": 0, "unit": "g"}
+                            }
+                        },
+                        {
+                            "name": "naan roti",
+                            "quantity": "1 piece",
+                            "nutrition": {
+                                "calories": {"value": 130, "unit": "kcal"},
+                                "protein": {"value": 5, "unit": "g"},
+                                "carbohydrates": {"value": 27, "unit": "g"},
+                                "fat": {"value": 1, "unit": "g"},
+                                "fiber": {"value": 3, "unit": "g"},
+                                "sugar": {"value": 2, "unit": "g"}
+                            }
+                        }
+                    ],
                     "nutrition": {
-                        "calories": 450,
-                        "protein": "35g",
-                        "carbohydrates": "40g",
-                        "fat": "15g",
-                        "fiber": "3g",
-                        "sugar": "2g"
+                        "calories": {"value": 450, "unit": "kcal"},
+                        "protein": {"value": 35, "unit": "g"},
+                        "carbohydrates": {"value": 40, "unit": "g"},
+                        "fat": {"value": 15, "unit": "g"},
+                        "fiber": {"value": 3, "unit": "g"},
+                        "sugar": {"value": 2, "unit": "g"}
                     }
                 }
             }
@@ -46,29 +71,34 @@ class NutritionCalculationRequest(BaseModel):
 
 class NutritionCalculationResponse(BaseModel):
     """Response model for nutrition calculation endpoint"""
-    food_analysis: FoodAnalysis = Field(..., description="Food analysis containing food items and nutrition data")
+    food_analysis: FoodAnalysis = Field(..., description="Food analysis containing per-item and total nutrition data")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "food_analysis": {
-                    "fooditems": [
-                        "Steamed white rice",
-                        "Yellow lentil dal soup",
-                        "Mixed vegetable curry with potatoes and other vegetables",
-                        "Sautéed leafy greens (likely spinach)",
-                        "Pickled vegetables (likely cucumber or gourd)",
-                        "Brown spiced chutney (likely tamarind based)",
-                        "Plain yogurt",
-                        "Sliced orange or mango fruit"
+                    "fooditem_details": [
+                        {
+                            "name": "Steamed white rice",
+                            "quantity": "1 bowl",
+                            "preparation": "steamed",
+                            "nutrition": {
+                                "calories": {"value": 205, "unit": "kcal"},
+                                "protein": {"value": 4, "unit": "g"},
+                                "carbohydrates": {"value": 45, "unit": "g"},
+                                "fat": {"value": 0.4, "unit": "g"},
+                                "fiber": {"value": 0.6, "unit": "g"},
+                                "sugar": {"value": 0.1, "unit": "g"}
+                            }
+                        }
                     ],
                     "nutrition": {
-                        "calories": 650,
-                        "protein": "22g",
-                        "carbohydrates": "105g",
-                        "fat": "15g",
-                        "fiber": "12g",
-                        "sugar": "18g"
+                        "calories": {"value": 650, "unit": "kcal"},
+                        "protein": {"value": 22, "unit": "g"},
+                        "carbohydrates": {"value": 105, "unit": "g"},
+                        "fat": {"value": 15, "unit": "g"},
+                        "fiber": {"value": 12, "unit": "g"},
+                        "sugar": {"value": 18, "unit": "g"}
                     }
                 }
             }

@@ -5,11 +5,9 @@ Intelligently merges old and new medical reports, tracking history and maintaini
 """
 
 import asyncio
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
+from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
 from .agent_response import AgentResponse
 from typing import Dict, Any
 import json
@@ -35,27 +33,17 @@ async def report_merge_agent(
                has_old_report=bool(old_report),
                has_new_report=bool(new_report))
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Report merge agent configuration error - missing AWS credentials")
-        return AgentResponse.error_response("Configuration error. Please try again later.")
-
     try:
-        llm = init_chat_model(
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
-            temperature=0.2,  # Low temperature for consistent merging
-        )
+        config = get_bedrock_config()
+        llm = create_bedrock_chat_model(temperature=0.2)
     except Exception as e:
-        logger.error("Report merge agent LLM initialization failed", error=str(e))
+        logger.error(
+            "Report merge agent LLM initialization failed",
+            error=str(e),
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+        )
         return AgentResponse.error_response("Report merge service is temporarily unavailable.")
 
     system_message = {

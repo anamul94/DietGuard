@@ -1,10 +1,8 @@
 import asyncio
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
-from langchain_aws import ChatBedrock
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+
+from ..utils.langfuse_utils import flush_langfuse, get_langfuse_handler
 from ..utils.logger import logger
+from ..utils.bedrock_utils import create_bedrock_chat_model, get_bedrock_config, get_bedrock_diagnostics
 from .agent_response import AgentResponse
 
 
@@ -16,74 +14,102 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
     """
     logger.info("Report agent invoked", file_type=file_type, mime_type=mime_type)
     
-    # Load environment variables
-    load_dotenv()
-
-    # Check if env variables are loaded
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.getenv("AWS_REGION")
-
-    if not all([aws_key, aws_secret, aws_region]):
-        logger.error("Report agent configuration error - missing AWS credentials",
-                    has_key=bool(aws_key), has_secret=bool(aws_secret), has_region=bool(aws_region))
-        return f"Environment variables not loaded. AWS_ACCESS_KEY_ID: {'✓' if aws_key else '✗'}, AWS_SECRET_ACCESS_KEY: {'✓' if aws_secret else '✗'}, AWS_REGION: {'✓' if aws_region else '✗'}"
-
     try:
-        llm = init_chat_model(
-            # "anthropic.claude-3-haiku-20240307-v1:0",
-            "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_provider="bedrock_converse",
-            region_name=aws_region,
+        config = get_bedrock_config()
+        bedrock_diag = get_bedrock_diagnostics()
+        logger.info(
+            "Report agent Bedrock runtime",
+            model_id=bedrock_diag["model_id"],
+            region_name=bedrock_diag["region_name"],
+            credential_source=bedrock_diag["credential_source"],
+            credential_type=bedrock_diag["credential_type"],
+            has_session_token=bedrock_diag["has_session_token"],
+            integration_path=bedrock_diag["integration_path"],
         )
+        llm = create_bedrock_chat_model()
     except Exception as e:
-        logger.error("Report agent LLM initialization failed", error=str(e), exception_type=type(e).__name__)
-        return f"Model initialization failed: {str(e)}"
-
-    # llm = ChatBedrock(
-    #     model_id="anthropic.claude-3-haiku-20240307-v1:0",
-    #     # plus AWS credentials / region etc if needed
-    #     beta_use_converse_api=True,
-    # )
+        logger.error(
+            "Report agent LLM initialization failed",
+            error=str(e),
+            exception_type=type(e).__name__,
+            has_region=bool(config.get("region_name")) if "config" in locals() else False,
+            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
+            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            model_id=bedrock_diag["model_id"] if "bedrock_diag" in locals() else None,
+            credential_source=bedrock_diag["credential_source"] if "bedrock_diag" in locals() else None,
+            integration_path=bedrock_diag["integration_path"] if "bedrock_diag" in locals() else None,
+        )
+        return AgentResponse.error_response("Report extraction service is temporarily unavailable.")
 
     system_message = {
         "role": "system",
         "content": (
             "You are a medical data extraction specialist. "
             "Your ONLY task is to extract information that is explicitly present in the medical report. "
-            "DO NOT add any interpretations, insights, recommendations, or assessments that are not in the document. "
-            "DO NOT infer normal/abnormal ranges unless stated in the report. "
-            "DO NOT provide medical advice or clinical opinions. \n\n"
-            "Output the extracted data in this JSON structure:\n"
+            "Do not assume the report type in advance. The user may upload any medical document: lab report, prescription, discharge summary, consultation note, radiology report, or unknown type. "
+            "DO NOT add medical interpretations, insights, recommendations, or assessments that are not in the document. "
+            "DO NOT infer normal or abnormal ranges unless they are written in the document. "
+            "DO NOT provide medical advice or clinical opinions.\n\n"
+            "Output ONLY valid JSON in this flexible structure:\n"
             "{\n"
-            "  \"resourceType\": \"DiagnosticReport\",\n"
-            "  \"status\": \"final\",\n"
-            "  \"effectiveDateTime\": \"YYYY-MM-DD\" (if date is in report),\n"
-            "  \"result\": [\n"
+            "  \"documentType\": \"lab_report | prescription | discharge_summary | radiology_report | consultation_note | unknown\",\n"
+            "  \"title\": \"document title if visible\",\n"
+            "  \"reportDate\": \"YYYY-MM-DD if visible\",\n"
+            "  \"sections\": [\n"
             "    {\n"
-            "      \"testName\": \"Test name as written\",\n"
-            "      \"value\": \"Exact value with unit\",\n"
-            "      \"referenceRange\": \"Range if stated in report\",\n"
-            "      \"interpretation\": \"Only if explicitly stated\"\n"
+            "      \"name\": \"Section name as written\",\n"
+            "      \"kind\": \"results | medications | diagnosis | advice | findings | history | other\",\n"
+            "      \"summary\": \"short factual summary of that section using only document content\",\n"
+            "      \"pageNumber\": 1\n"
             "    }\n"
             "  ],\n"
-            "  \"clinicalFindings\": [\"Finding 1\", \"Finding 2\"],\n"
-            "  \"diagnosticImpressions\": [\"Impression 1\"] (only if stated)\n"
+            "  \"entities\": [\n"
+            "    {\n"
+            "      \"entityType\": \"observation | condition | medication | allergy | restriction | recommendation | finding | procedure | encounter | other\",\n"
+            "      \"category\": \"lab | diagnosis | prescription | diet | symptom | imaging | clinical_finding | advice | other\",\n"
+            "      \"label\": \"entity name exactly or nearly exactly as written\",\n"
+            "      \"valueText\": \"value or factual detail exactly as written\",\n"
+            "      \"valueNumeric\": 7.2,\n"
+            "      \"unit\": \"%\",\n"
+            "      \"referenceRange\": \"4.0-5.6%\",\n"
+            "      \"interpretation\": \"high if explicitly stated\",\n"
+            "      \"status\": \"present/final/ongoing/etc only if explicitly stated\",\n"
+            "      \"effectiveDate\": \"YYYY-MM-DD if visible\",\n"
+            "      \"sourceSection\": \"section name if known\",\n"
+            "      \"sourceText\": \"short supporting snippet from the document\",\n"
+            "      \"pageNumber\": 1,\n"
+            "      \"confidence\": 0.0,\n"
+            "      \"attributes\": {\n"
+            "        \"dose\": \"500 mg\",\n"
+            "        \"schedule\": \"twice daily\",\n"
+            "        \"timing\": \"after meals\",\n"
+            "        \"panel\": \"Lipid Profile\"\n"
+            "      }\n"
+            "    }\n"
+            "  ],\n"
+            "  \"unmappedEntities\": [\n"
+            "    {\n"
+            "      \"label\": \"important content that does not fit a standard type\",\n"
+            "      \"sourceText\": \"supporting snippet\"\n"
+            "    }\n"
+            "  ]\n"
             "}\n\n"
             "Rules:\n"
-            "- Extract exact values, dates, and measurements as written\n"
-            "- Preserve medical terminology from the document\n"
-            "- If a field has no data in the report, use empty array [] or omit it\n"
-            "- Do not add reference ranges unless they are in the report\n"
-            "- Do not interpret or explain findings\n"
-            "- Output ONLY valid JSON, no markdown formatting"
+            "- Prefer preserving information as entities instead of dropping it.\n"
+            "- If you are unsure of the report type, set documentType to unknown.\n"
+            "- Unknown or unusual report content should go into entities or unmappedEntities, not be omitted.\n"
+            "- Preserve medical terminology from the document.\n"
+            "- Extract exact values, units, dates, medication schedules, and advice as written.\n"
+            "- If valueNumeric is not explicit, omit it.\n"
+            "- If confidence is uncertain, provide a conservative decimal between 0 and 1.\n"
+            "- Output ONLY valid JSON with no markdown formatting."
         )
     }
 
     message = {
         "role": "user",
         "content": [
-            {"type": "text", "text": "Extract all data from this medical report and output as JSON following the exact structure specified."},
+            {"type": "text", "text": "Extract all explicit medical information from this document into the flexible JSON structure with sections, entities, and unmappedEntities."},
             {
                 "type": file_type,
                 "source_type": "base64",
@@ -100,8 +126,6 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
             lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
         )
 
-        print(response)
-        
         # Flush events to Langfuse
         flush_langfuse()
         
@@ -111,7 +135,7 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
         
         # Prepare metadata for token tracking
         metadata = {
-            "model_name": meta.get("model_name", "claude-3.7-sonnet"),
+            "model_name": meta.get("model_name", "claude-sonnet-4.6"),
             "input_tokens": usage.get("input_tokens", 0),
             "output_tokens": usage.get("output_tokens", 0),
             "total_tokens": usage.get("total_tokens", 0),
@@ -120,7 +144,9 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
         }
         
         # Get response text
-        response_text = response.content if hasattr(response, "content") else str(response)
+        response_text = response.text() if hasattr(response, "text") else (
+            response.content if hasattr(response, "content") else str(response)
+        )
         
         logger.info("Report agent completed successfully", 
                    file_type=file_type, 
@@ -129,5 +155,16 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
         
         return AgentResponse.success_response(response_text, metadata=metadata)
     except Exception as e:
-        logger.error("Report agent model invocation failed", error=str(e), exception_type=type(e).__name__, file_type=file_type)
+        logger.error(
+            "Report agent model invocation failed",
+            error=str(e),
+            exception_type=type(e).__name__,
+            file_type=file_type,
+            model_id=bedrock_diag["model_id"] if "bedrock_diag" in locals() else None,
+            region_name=bedrock_diag["region_name"] if "bedrock_diag" in locals() else None,
+            credential_source=bedrock_diag["credential_source"] if "bedrock_diag" in locals() else None,
+            credential_type=bedrock_diag["credential_type"] if "bedrock_diag" in locals() else None,
+            has_session_token=bedrock_diag["has_session_token"] if "bedrock_diag" in locals() else None,
+            integration_path=bedrock_diag["integration_path"] if "bedrock_diag" in locals() else None,
+        )
         return AgentResponse.error_response(f"Model invocation failed: {str(e)}")

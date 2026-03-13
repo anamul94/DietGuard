@@ -7,7 +7,9 @@ Organized by domain for better maintainability.
 
 from .food_schemas import (
     FoodItem,
+    FoodNutritionBreakdownItem,
     NutritionInfo,
+    NutritionMetric,
     FoodAnalysis,
     FoodUploadResponse,
 )
@@ -36,12 +38,31 @@ from .ingredient_schemas import (
     IngredientAnalysis,
     IngredientScanResponse,
 )
+from .health_schemas import (
+    ConditionSnapshotResponse,
+    CorrelationInsightResponse,
+    DeviceVitalSyncRequest,
+    MealConfirmRequest,
+    MealConfirmResponse,
+    MealDraftItem,
+    MealDraftResponse,
+    PeriodInsightsResponse,
+    StructuredHealthProfileResponse,
+    StructuredReportEntity,
+    StructuredReportSection,
+    VitalBatchCreate,
+    VitalBatchResponse,
+    VitalEntryCreate,
+    VitalEntryResponse,
+)
 
 
 __all__ = [
     # Food schemas
     "FoodItem",
+    "FoodNutritionBreakdownItem",
     "NutritionInfo",
+    "NutritionMetric",
     "FoodAnalysis",
     "FoodUploadResponse",
     # Nutrition schemas
@@ -62,4 +83,20 @@ __all__ = [
     "IngredientDetail",
     "IngredientAnalysis",
     "IngredientScanResponse",
+    # Health timeline schemas
+    "ConditionSnapshotResponse",
+    "CorrelationInsightResponse",
+    "DeviceVitalSyncRequest",
+    "MealConfirmRequest",
+    "MealConfirmResponse",
+    "MealDraftItem",
+    "MealDraftResponse",
+    "PeriodInsightsResponse",
+    "StructuredHealthProfileResponse",
+    "StructuredReportEntity",
+    "StructuredReportSection",
+    "VitalBatchCreate",
+    "VitalBatchResponse",
+    "VitalEntryCreate",
+    "VitalEntryResponse",
 ]

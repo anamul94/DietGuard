@@ -42,17 +42,28 @@ class NutritionAdviceRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "food_analysis": {
-                    "fooditems": [
-                        "pizza with cheese and tomato",
-                        "grilled chicken with naan roti"
+                    "fooditem_details": [
+                        {
+                            "name": "pizza with cheese and tomato",
+                            "quantity": "2 slices",
+                            "preparation": "baked",
+                            "nutrition": {
+                                "calories": {"value": 320, "unit": "kcal"},
+                                "protein": {"value": 12, "unit": "g"},
+                                "carbohydrates": {"value": 38, "unit": "g"},
+                                "fat": {"value": 14, "unit": "g"},
+                                "fiber": {"value": 2, "unit": "g"},
+                                "sugar": {"value": 4, "unit": "g"}
+                            }
+                        }
                     ],
                     "nutrition": {
-                        "calories": 650,
-                        "protein": "45g",
-                        "carbohydrates": "12g",
-                        "fat": "48g",
-                        "fiber": "1g",
-                        "sugar": "8g"
+                        "calories": {"value": 650, "unit": "kcal"},
+                        "protein": {"value": 45, "unit": "g"},
+                        "carbohydrates": {"value": 12, "unit": "g"},
+                        "fat": {"value": 48, "unit": "g"},
+                        "fiber": {"value": 1, "unit": "g"},
+                        "sugar": {"value": 8, "unit": "g"}
                     }
                 },
                 "meal_type": "breakfast",
