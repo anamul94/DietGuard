@@ -4,6 +4,7 @@ Pure helpers for structured health normalization.
 
 from __future__ import annotations
 
+from collections import defaultdict
 import csv
 import io
 import json
@@ -33,6 +34,12 @@ LAB_NAME_MAPPINGS = {
     "vitamin_d": [r"vitamin d"],
     "vitamin_b12": [r"vitamin b12", r"\bb12\b"],
     "tsh": [r"\btsh\b", r"thyroid stimulating hormone"],
+    "t3": [r"\bt3\b", r"tri[- ]?iodothyronine", r"free t3"],
+    "t4": [r"\bt4\b", r"thyroxine", r"free t4"],
+    "troponin": [r"troponin"],
+    "ecg": [r"\becg\b", r"\bekg\b", r"electrocardiogram"],
+    "urine_albumin": [r"urine albumin", r"microalbumin"],
+    "urine_protein": [r"urine protein", r"proteinuria"],
 }
 
 CONDITION_PATTERNS = {
@@ -81,6 +88,50 @@ DOCUMENT_TYPE_HINTS = {
     "discharge_summary": [r"discharge", r"hospital course", r"admission", r"discharged on"],
     "radiology_report": [r"radiology", r"\bmri\b", r"\bct\b", r"x-ray", r"ultrasound", r"impression"],
     "consultation_note": [r"consult", r"assessment", r"plan", r"follow-up", r"chief complaint"],
+}
+
+LAB_CATEGORY_MAPPINGS = {
+    "hba1c": "metabolic",
+    "glucose": "metabolic",
+    "tsh": "thyroid",
+    "t3": "thyroid",
+    "t4": "thyroid",
+    "ldl": "lipid",
+    "hdl": "lipid",
+    "triglycerides": "lipid",
+    "total_cholesterol": "lipid",
+    "creatinine": "renal",
+    "urea": "renal",
+    "bun": "renal",
+    "uric_acid": "renal",
+    "hemoglobin": "cbc",
+    "platelets": "cbc",
+    "wbc": "cbc",
+    "rbc": "cbc",
+    "troponin": "cardiac",
+    "ecg": "cardiac",
+    "urine_albumin": "urine",
+    "urine_protein": "urine",
+    "vitamin_d": "nutritional",
+    "vitamin_b12": "nutritional",
+}
+
+CONDITION_CATEGORY_MAPPINGS = {
+    "diabetes": "metabolic",
+    "hypertension": "cardiac",
+    "dyslipidemia": "lipid",
+    "kidney_disease": "renal",
+}
+
+REPORT_CATEGORY_TEXT_HINTS = {
+    "thyroid": [r"thyroid", r"\btsh\b", r"\bt3\b", r"\bt4\b"],
+    "cardiac": [r"cardiac", r"heart", r"ecg", r"ekg", r"troponin"],
+    "urine": [r"urine", r"urinalysis", r"proteinuria", r"microalbumin"],
+    "renal": [r"renal", r"kidney", r"creatinine", r"\bbun\b", r"\burea\b"],
+    "lipid": [r"lipid", r"cholesterol", r"triglyceride", r"\bldl\b", r"\bhdl\b"],
+    "metabolic": [r"glucose", r"hba1c", r"blood sugar", r"diabet"],
+    "cbc": [r"\bcbc\b", r"complete blood count", r"hemoglobin", r"platelet", r"\bwbc\b", r"\brbc\b"],
+    "nutritional": [r"vitamin d", r"vitamin b12"],
 }
 
 KNOWN_ENTITY_KEYS = {
@@ -268,6 +319,100 @@ def canonical_condition_name(text: Optional[str]) -> Optional[str]:
         if any(re.search(pattern, lowered) for pattern in patterns):
             return condition_name
     return None
+
+
+def infer_lab_result_category(lab: Dict[str, Any]) -> Optional[str]:
+    canonical_name = coerce_string(lab.get("canonical_name")) or canonical_lab_name(
+        coerce_string(lab.get("test_name")) or coerce_string(lab.get("value_text"))
+    )
+    if canonical_name:
+        return LAB_CATEGORY_MAPPINGS.get(canonical_name)
+
+    test_bits = " ".join(
+        bit
+        for bit in [
+            coerce_string(lab.get("test_name")),
+            coerce_string(lab.get("reference_range")),
+            coerce_string(lab.get("interpretation")),
+        ]
+        if bit
+    ).lower()
+    for report_category, patterns in REPORT_CATEGORY_TEXT_HINTS.items():
+        if any(re.search(pattern, test_bits) for pattern in patterns):
+            return report_category
+    return None
+
+
+def infer_condition_category(condition_text: Optional[str]) -> Optional[str]:
+    canonical = canonical_condition_name(condition_text)
+    if canonical:
+        return CONDITION_CATEGORY_MAPPINGS.get(canonical)
+    return None
+
+
+def infer_medication_category(medication: Dict[str, Any], fallback_category: str = "general") -> str:
+    medication_text = " ".join(
+        bit
+        for bit in [
+            coerce_string(medication.get("medication_name")),
+            coerce_string(medication.get("dosage")),
+            coerce_string(medication.get("schedule")),
+            coerce_string(medication.get("timing_notes")),
+        ]
+        if bit
+    ).lower()
+
+    if any(re.search(pattern, medication_text) for pattern in [r"metformin", r"insulin", r"glipizide", r"glycemic"]):
+        return "metabolic"
+    if any(re.search(pattern, medication_text) for pattern in [r"levothyroxine", r"thyroxine"]):
+        return "thyroid"
+    if any(re.search(pattern, medication_text) for pattern in [r"statin", r"atorvastatin", r"rosuvastatin"]):
+        return "lipid"
+    if any(re.search(pattern, medication_text) for pattern in [r"amlodipine", r"losartan", r"telmisartan", r"metoprolol"]):
+        return "cardiac"
+    if any(re.search(pattern, medication_text) for pattern in [r"furosemide", r"torsemide", r"renal"]):
+        return "renal"
+    return fallback_category
+
+
+def infer_entity_report_category(entity: Dict[str, Any], fallback_category: str = "general") -> str:
+    entity_type = coerce_string(entity.get("entity_type") or entity.get("entityType")) or "other"
+    label = coerce_string(entity.get("label"))
+    value_text = coerce_string(entity.get("value_text") or entity.get("valueText"))
+    source_text = coerce_string(entity.get("source_text") or entity.get("sourceText"))
+    category = coerce_string(entity.get("category"))
+    canonical_name = coerce_string(entity.get("canonical_name") or entity.get("canonicalName"))
+
+    if entity_type == "observation" or category == "lab":
+        return infer_lab_result_category(
+            {
+                "test_name": label,
+                "canonical_name": canonical_name,
+                "value_text": value_text,
+                "reference_range": entity.get("reference_range") or entity.get("referenceRange"),
+                "interpretation": entity.get("interpretation"),
+            }
+        ) or fallback_category
+
+    if entity_type == "condition":
+        return infer_condition_category(" ".join(bit for bit in [label, value_text, source_text] if bit)) or fallback_category
+
+    if entity_type == "medication":
+        return infer_medication_category(
+            {
+                "medication_name": label,
+                "dosage": entity.get("attributes", {}).get("dose") or value_text,
+                "schedule": entity.get("attributes", {}).get("schedule"),
+                "timing_notes": entity.get("attributes", {}).get("timing"),
+            },
+            fallback_category=fallback_category,
+        )
+
+    text = " ".join(bit for bit in [label, value_text, source_text, category] if bit).lower()
+    for report_category, patterns in REPORT_CATEGORY_TEXT_HINTS.items():
+        if any(re.search(pattern, text) for pattern in patterns):
+            return report_category
+    return fallback_category
 
 
 def contains_condition(text_blocks: Iterable[str], condition_name: str) -> str:
@@ -837,6 +982,129 @@ def merge_dynamic_reports(parsed_reports: List[Dict[str, Any]], filenames: Optio
         "unmappedEntities": combined_unmapped,
         "sourceDocuments": source_documents,
     }
+
+
+def infer_report_category(
+    normalized_report: Dict[str, Any],
+    structured_report: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    structured_report = structured_report or build_structured_report(normalized_report)
+    scores: dict[str, int] = defaultdict(int)
+
+    document_type = coerce_string(normalized_report.get("documentType")) or "unknown"
+    if document_type == "prescription":
+        scores["prescription"] += 4
+    elif document_type == "radiology_report":
+        scores["radiology"] += 4
+    elif document_type in {"consultation_note", "discharge_summary"}:
+        scores["clinical_note"] += 3
+    elif document_type == "lab_report":
+        scores["lab_panel"] += 1
+
+    text_blocks = [
+        coerce_string(normalized_report.get("title")) or "",
+        *(coerce_string(section.get("name")) or "" for section in structured_report.get("sections", [])),
+        *(coerce_string(section.get("summary")) or "" for section in structured_report.get("sections", [])),
+        *(coerce_string(entity.get("label")) or "" for entity in structured_report.get("entities", [])[:20]),
+    ]
+    joined_text = " ".join(block for block in text_blocks if block).lower()
+    for report_category, patterns in REPORT_CATEGORY_TEXT_HINTS.items():
+        if any(re.search(pattern, joined_text) for pattern in patterns):
+            scores[report_category] += 1
+
+    granular_categories: set[str] = set()
+    for lab in structured_report.get("labs", []):
+        category = infer_lab_result_category(lab)
+        if category:
+            scores[category] += 3
+            granular_categories.add(category)
+
+    snapshot = structured_report.get("snapshot", {})
+    for condition_name, status_key in (
+        ("diabetes", "diabetes_status"),
+        ("hypertension", "hypertension_status"),
+        ("dyslipidemia", "dyslipidemia_status"),
+    ):
+        if snapshot.get(status_key) == "yes":
+            category = CONDITION_CATEGORY_MAPPINGS.get(condition_name)
+            if category:
+                scores[category] += 2
+                granular_categories.add(category)
+    if snapshot.get("kidney_disease_stage"):
+        scores["renal"] += 2
+        granular_categories.add("renal")
+
+    for entity in structured_report.get("entities", []):
+        category = infer_entity_report_category(entity, fallback_category="")
+        if category:
+            scores[category] += 1
+            if category not in {"general", "clinical_note", "prescription", "radiology", "lab_panel"}:
+                granular_categories.add(category)
+
+    for medication in structured_report.get("medications", []):
+        category = infer_medication_category(medication, fallback_category="")
+        if category:
+            scores[category] += 1
+            if category:
+                granular_categories.add(category)
+
+    if len(granular_categories) > 1 and document_type == "lab_report":
+        primary_category = "lab_panel"
+    elif scores:
+        primary_category = max(
+            scores.items(),
+            key=lambda item: (item[1], item[0] not in {"general", "clinical_note"}),
+        )[0]
+    else:
+        primary_category = "general"
+
+    category_scopes = sorted(granular_categories)
+    if not category_scopes:
+        category_scopes = [primary_category]
+
+    return {
+        "primary_category": primary_category,
+        "category_scopes": category_scopes,
+        "document_type": document_type,
+    }
+
+
+def group_report_analyses_by_category(individual_analyses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: dict[str, Dict[str, Any]] = {}
+
+    for item in individual_analyses:
+        filename = coerce_string(item.get("filename")) or "report"
+        analysis = item.get("analysis") or {}
+        normalized = normalize_dynamic_report(analysis if isinstance(analysis, dict) else {})
+        structured = build_structured_report(normalized)
+        category = infer_report_category(normalized, structured)["primary_category"]
+
+        bundle = grouped.setdefault(
+            category,
+            {
+                "report_category": category,
+                "filenames": [],
+                "individual_analyses": [],
+                "reports": [],
+            },
+        )
+        bundle["filenames"].append(filename)
+        bundle["individual_analyses"].append({"filename": filename, "analysis": normalized})
+        bundle["reports"].append(normalized)
+
+    results = []
+    for bundle in grouped.values():
+        merged_report = merge_dynamic_reports(bundle["reports"], filenames=bundle["filenames"])
+        results.append(
+            {
+                "report_category": bundle["report_category"],
+                "filenames": bundle["filenames"],
+                "individual_analyses": bundle["individual_analyses"],
+                "merged_report": merged_report,
+            }
+        )
+
+    return sorted(results, key=lambda item: item["report_category"])
 
 
 def _entity_text(entity: Dict[str, Any]) -> str:

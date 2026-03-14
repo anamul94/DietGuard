@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...application.services.health_timeline_service import HealthTimelineService, group_food_items_for_review, parse_vitals_csv
+from ...application.services.nutrition_target_service import NutritionTargetService
 from ...application.services.patient_service import PatientService
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
@@ -22,8 +23,13 @@ from ..schemas.health_schemas import (
     MealConfirmRequest,
     MealConfirmResponse,
     MealDraftResponse,
+    NutritionTargetAdherenceResponse,
+    NutritionTargetManualCreateRequest,
+    NutritionTargetResponse,
+    PaginatedMealHistoryResponse,
     PeriodInsightsResponse,
     StructuredHealthProfileResponse,
+    TodayMealNutritionSummaryResponse,
     VitalBatchCreate,
     VitalBatchResponse,
 )
@@ -41,6 +47,56 @@ async def get_current_health_profile(
     if not profile["report"]["version"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No structured medical report found")
     return profile
+
+
+@router.get("/targets/current", response_model=NutritionTargetResponse)
+async def get_current_nutrition_target(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    target = await NutritionTargetService.get_current_target(db, current_user.id)
+    if target:
+        return target
+
+    try:
+        return await NutritionTargetService.upsert_calculated_target(db, current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post("/targets", response_model=NutritionTargetResponse)
+async def set_manual_nutrition_target(
+    request: NutritionTargetManualCreateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await NutritionTargetService.set_manual_target(
+        db=db,
+        user_id=current_user.id,
+        target_date=request.target_date,
+        calories_kcal=request.calories_kcal,
+        protein_g=request.protein_g,
+        carbohydrates_g=request.carbohydrates_g,
+        fat_g=request.fat_g,
+        fiber_g=request.fiber_g,
+    )
+
+
+@router.get("/targets/adherence", response_model=NutritionTargetAdherenceResponse)
+async def get_nutrition_target_adherence(
+    date_value: date | None = Query(default=None, alias="date"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    target_date = date_value or date.today()
+    try:
+        return await NutritionTargetService.get_adherence_for_date(
+            db=db,
+            user_id=current_user.id,
+            target_date=target_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.post("/meals/draft-from-image", response_model=MealDraftResponse)
@@ -113,6 +169,7 @@ async def confirm_meal(
         fooditem_details=agent_response.data.get("fooditem_details", []),
         source_filenames=request.source_filenames,
         notes=request.notes,
+        source="confirmed_meal",
     )
 
     return {
@@ -123,6 +180,44 @@ async def confirm_meal(
         "food_analysis": agent_response.data,
         "source_filenames": request.source_filenames,
     }
+
+
+@router.get("/meals/today-summary", response_model=TodayMealNutritionSummaryResponse)
+async def get_todays_meal_summary(
+    target_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    target_date = target_date or date.today()
+    return await HealthTimelineService.get_todays_meal_nutrition_summary(
+        db=db,
+        user_id=current_user.id,
+        target_date=target_date,
+    )
+
+
+@router.get("/meals/history", response_model=PaginatedMealHistoryResponse)
+async def get_meal_history(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date cannot be after end_date",
+        )
+    return await HealthTimelineService.get_meal_history(
+        db=db,
+        user_id=current_user.id,
+        start_date=start_date,
+        end_date=end_date,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/vitals", response_model=VitalBatchResponse)
@@ -258,4 +353,22 @@ async def get_weekly_insights(
         start_datetime=start_datetime,
         end_datetime=end_datetime,
         label="weekly",
+    )
+
+
+@router.get("/insights/monthly", response_model=PeriodInsightsResponse)
+async def get_monthly_insights(
+    end_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    end_date = end_date or date.today()
+    end_datetime = datetime.combine(end_date, time.max, tzinfo=timezone.utc)
+    start_datetime = end_datetime - timedelta(days=29)
+    return await HealthTimelineService.get_period_insights(
+        db=db,
+        user_id=current_user.id,
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
+        label="monthly",
     )

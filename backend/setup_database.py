@@ -1,45 +1,34 @@
 #!/usr/bin/env python3
 """
-Script to set up database tables
-"""
-import subprocess
-import sys
-import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
-from src.infrastructure.database.database import DATABASE_URL, Base
+Create the current SQLAlchemy tables for local development.
 
-async def create_tables():
-    """Create database tables using SQLAlchemy"""
+Prefer Alembic migrations for normal setup. This file exists as a fallback for
+fresh dev environments and intentionally imports all active model modules before
+calling Base.metadata.create_all().
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from src.infrastructure.database import auth_models, health_models, patient_models  # noqa: F401
+from src.infrastructure.database.database import Base, DATABASE_URL
+
+
+async def create_tables() -> None:
     try:
         engine = create_async_engine(DATABASE_URL)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         await engine.dispose()
-        print("✅ Database tables created successfully!")
-    except Exception as e:
-        print(f"❌ Failed to create tables: {e}")
-        sys.exit(1)
+        print("Database tables created successfully.")
+    except Exception as exc:
+        print(f"Failed to create tables: {exc}", file=sys.stderr)
+        raise
 
-def run_migrations():
-    """Run Alembic migrations"""
-    try:
-        result = subprocess.run([
-            "uv", "run", "alembic", "upgrade", "head"
-        ], check=True, capture_output=True, text=True)
-        
-        print("✅ Migrations applied successfully!")
-        print(result.stdout)
-        
-    except subprocess.CalledProcessError as e:
-        print("❌ Failed to run migrations:")
-        print(e.stderr)
-        sys.exit(1)
 
 if __name__ == "__main__":
-    print("Setting up database...")
-    
-    # Method 1: Create tables directly
     asyncio.run(create_tables())
-    
-    # Method 2: Use migrations (optional)
-    # run_migrations()

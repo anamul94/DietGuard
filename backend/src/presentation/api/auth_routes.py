@@ -33,6 +33,8 @@ class SignUpRequest(BaseModel):
     current_location: Optional[str] = Field(None, max_length=100, description="Current city/state")
     birth_place: Optional[str] = Field(None, max_length=100, description="Birth city/country")
     nationality: Optional[str] = Field(None, max_length=50, description="Nationality")
+    activity_level: Optional[str] = Field("sedentary", pattern="^(sedentary|light|moderate|active|very_active)$")
+    timezone: Optional[str] = Field("UTC", min_length=1, max_length=50, description="IANA timezone")
     date_of_birth: Optional[datetime] = Field(None, description="Date of birth in ISO format (age will be calculated)")
     
     @field_validator('date_of_birth')
@@ -97,6 +99,8 @@ async def signup(
             current_location=user_data.current_location,
             birth_place=user_data.birth_place,
             nationality=user_data.nationality,
+            activity_level=user_data.activity_level,
+            timezone_name=user_data.timezone,
             date_of_birth=user_data.date_of_birth,
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent")
@@ -259,8 +263,8 @@ async def forgot_password(
     
     - **email**: User's email address
     
-    Note: In production, this will send an email with reset link.
-    For now, the token is logged to console.
+    Note: The backend records the reset request and is ready for email delivery wiring.
+    The reset token is not exposed in logs or API responses.
     """
     try:
         await AuthService.initiate_password_reset(

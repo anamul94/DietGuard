@@ -33,6 +33,8 @@ class PatientService:
         current_location: Optional[str] = None,
         birth_place: Optional[str] = None,
         nationality: Optional[str] = None,
+        activity_level: Optional[str] = "sedentary",
+        timezone: Optional[str] = "UTC",
         date_of_birth: Optional[datetime] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
@@ -85,6 +87,8 @@ class PatientService:
                 current_location=current_location,
                 birth_place=birth_place,
                 nationality=nationality,
+                activity_level=activity_level or "sedentary",
+                timezone=timezone or "UTC",
                 date_of_birth=date_of_birth.date() if date_of_birth else None # age will be calculated from date_of_birth
             )
             db.add(patient_persona)
@@ -114,6 +118,19 @@ class PatientService:
             )
             
             logger.info("Patient data created", user_id=user_id)
+
+            # Initialize calculated targets when profile has minimum required inputs.
+            from .nutrition_target_service import NutritionTargetService
+
+            try:
+                await NutritionTargetService.upsert_calculated_target(
+                    db=db,
+                    user_id=user_id,
+                    commit=False,
+                )
+            except ValueError:
+                # Profile may be incomplete during onboarding; calculation can happen later.
+                pass
             
             return {
                 "pii": patient_pii,
@@ -209,7 +226,9 @@ class PatientService:
                 "current_location": patient_persona.current_location,
                 "birth_place": patient_persona.birth_place,
                 "nationality": patient_persona.nationality,
-                "date_of_birth": patient_persona.date_of_birth.isoformat() if patient_persona.date_of_birth else None
+                "date_of_birth": patient_persona.date_of_birth.isoformat() if patient_persona.date_of_birth else None,
+                "activity_level": patient_persona.activity_level,
+                "timezone": patient_persona.timezone,
             }
         
         return {
@@ -321,12 +340,15 @@ class PatientService:
         try:
             # Update allowed fields
             allowed_fields = ["gender", "date_of_birth", "blood_group", "height_cm", "weight_kg", 
-                            "current_location", "birth_place", "nationality"]
+                            "current_location", "birth_place", "nationality", "activity_level", "timezone"]
             
             for field, value in updates.items():
                 if field in allowed_fields:
                     setattr(patient_persona, field, value)
                     fields_modified.append(field)
+
+            recalc_fields = {"height_cm", "weight_kg", "date_of_birth", "gender", "activity_level"}
+            should_recalculate_targets = any(field in recalc_fields for field in fields_modified)
             
             # Log HIPAA audit
             if fields_modified:
@@ -340,6 +362,21 @@ class PatientService:
                     ip_address=ip_address,
                     user_agent=user_agent
                 )
+
+            if should_recalculate_targets:
+                from .nutrition_target_service import NutritionTargetService
+
+                try:
+                    await NutritionTargetService.upsert_calculated_target(
+                        db=db,
+                        user_id=user_id,
+                        commit=False,
+                    )
+                except ValueError:
+                    logger.warning(
+                        "Skipped nutrition target recalculation due to incomplete persona",
+                        user_id=user_id,
+                    )
             
             await db.commit()
             logger.info("Patient persona updated", user_id=user_id, fields=fields_modified)

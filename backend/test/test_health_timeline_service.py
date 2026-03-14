@@ -1,6 +1,8 @@
 from src.application.services.health_utils import (
     build_structured_report,
     group_food_items_for_review,
+    group_report_analyses_by_category,
+    infer_report_category,
     merge_dynamic_reports,
     normalize_dynamic_report,
     parse_llm_json_payload,
@@ -213,3 +215,72 @@ def test_parse_llm_json_payload_handles_fenced_json():
 
     assert parsed["documentType"] == "lab_report"
     assert normalized["entities"][0]["label"] == "TSH"
+
+
+def test_infer_report_category_detects_mixed_lab_panel_scope():
+    report = normalize_dynamic_report(
+        {
+            "documentType": "lab_report",
+            "title": "Comprehensive metabolic and lipid panel",
+            "entities": [
+                {
+                    "entityType": "observation",
+                    "category": "lab",
+                    "label": "HbA1c",
+                    "valueText": "7.4 %",
+                },
+                {
+                    "entityType": "observation",
+                    "category": "lab",
+                    "label": "LDL Cholesterol",
+                    "valueText": "145 mg/dL",
+                },
+            ],
+        }
+    )
+
+    category_meta = infer_report_category(report)
+
+    assert category_meta["primary_category"] == "lab_panel"
+    assert category_meta["category_scopes"] == ["lipid", "metabolic"]
+
+
+def test_group_report_analyses_by_category_separates_thyroid_from_metabolic_uploads():
+    grouped = group_report_analyses_by_category(
+        [
+            {
+                "filename": "a1c.pdf",
+                "analysis": {
+                    "documentType": "lab_report",
+                    "entities": [
+                        {
+                            "entityType": "observation",
+                            "category": "lab",
+                            "label": "HbA1c",
+                            "valueText": "7.2 %",
+                        }
+                    ],
+                },
+            },
+            {
+                "filename": "thyroid.pdf",
+                "analysis": {
+                    "documentType": "lab_report",
+                    "entities": [
+                        {
+                            "entityType": "observation",
+                            "category": "lab",
+                            "label": "TSH",
+                            "valueText": "2.5 uIU/mL",
+                        }
+                    ],
+                },
+            },
+        ]
+    )
+
+    categories = [item["report_category"] for item in grouped]
+
+    assert categories == ["metabolic", "thyroid"]
+    assert grouped[0]["filenames"] == ["a1c.pdf"]
+    assert grouped[1]["filenames"] == ["thyroid.pdf"]

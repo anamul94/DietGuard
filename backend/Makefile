@@ -5,6 +5,7 @@ IMAGE_NAME = dietguard-backend-food
 CONTAINER_NAME = dietguard-backend-app
 PORT = 8000
 DOCKER_PORT = 8011
+UV = UV_CACHE_DIR=/tmp/uv-cache uv
 
 # Default target
 help: ## Show this help message
@@ -14,39 +15,39 @@ help: ## Show this help message
 
 # Development Commands
 dev: ## Start development server with hot reload
-	uv run uvicorn main:app --reload --host 0.0.0.0 --port $(PORT)
+	$(UV) run uvicorn main:app --reload --host 0.0.0.0 --port $(PORT)
 
 serve: ## Start production server
-	uv run uvicorn main:app --host 0.0.0.0 --port $(PORT)
+	$(UV) run uvicorn main:app --host 0.0.0.0 --port $(PORT)
 
 test: ## Run tests
-	uv run pytest tests/ -v
+	$(UV) run pytest tests/ -v
 
 test-coverage: ## Run tests with coverage report
-	uv run pytest tests/ -v --cov=src --cov-report=html --cov-report=term
+	$(UV) run pytest tests/ -v --cov=src --cov-report=html --cov-report=term
 
 lint: ## Run linting checks
-	uv run ruff check src/
+	$(UV) run ruff check src/
 
 format: ## Format code
-	uv run ruff format src/
+	$(UV) run ruff format src/
 
 format-check: ## Check code formatting without making changes
-	uv run ruff format --check src/
+	$(UV) run ruff format --check src/
 
 # Package Management
 install: ## Install dependencies
-	uv sync
+	$(UV) sync
 
 upgrade: ## Upgrade all packages to latest versions
-	uv sync --upgrade
+	$(UV) sync --upgrade
 
 check-outdated: ## Check for outdated packages
-	uv tree --outdated
+	$(UV) tree --outdated
 
 # Database Commands
 setup-db: ## Setup database (run initial setup script)
-	uv run python setup_database.py
+	./scripts/setup_tables.sh
 
 full-setup: ## Complete database setup (setup + migrate + seed)
 	@echo "🚀 Starting complete database setup..."
@@ -58,12 +59,12 @@ full-setup: ## Complete database setup (setup + migrate + seed)
 	@echo "✅ Database setup complete!"
 
 migrate: ## Run database migrations
-	uv run alembic upgrade head
+	$(UV) run alembic upgrade head
 
 force-migrate: ## Force run migrations (downgrade and upgrade)
 	@echo "⚠️  Force migrating database..."
-	uv run alembic downgrade -1
-	uv run alembic upgrade head
+	$(UV) run alembic downgrade -1
+	$(UV) run alembic upgrade head
 	@echo "✅ Force migration complete!"
 
 create-migration: ## Create a new migration (usage: make create-migration MSG="description")
@@ -71,22 +72,22 @@ create-migration: ## Create a new migration (usage: make create-migration MSG="d
 		echo "Error: Please provide a message. Usage: make create-migration MSG='your description'"; \
 		exit 1; \
 	fi
-	uv run python create_migration.py "$(MSG)"
+	$(UV) run python create_migration.py "$(MSG)"
 
 migration-history: ## Show migration history
-	uv run alembic history
+	$(UV) run alembic history
 
 migration-current: ## Show current migration
-	uv run alembic current
+	$(UV) run alembic current
 
 migration-heads: ## Show migration heads
-	uv run alembic heads
+	$(UV) run alembic heads
 
 reset-db: ## Reset database (WARNING: This will drop all data)
 	@echo "WARNING: This will drop all database data!"
 	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
-	uv run alembic downgrade base
-	uv run alembic upgrade head
+	$(UV) run alembic downgrade base
+	$(UV) run alembic upgrade head
 
 db-health: ## Check database health and migration status
 	@echo "🏥 Database Health Check"
@@ -145,17 +146,17 @@ clean-all: stop clean ## Stop container and remove image
 # Utility Commands
 check-env: ## Check if required environment variables are set
 	@echo "Checking environment variables..."
-	@uv run python -c "from src.infrastructure.config.settings import settings; print('✓ Environment configuration loaded successfully')"
+	@$(UV) run python -c "from src.infrastructure.config.settings import settings; print('✓ Environment configuration loaded successfully')"
 
 test-model: ## Test the AI model configuration
-	uv run python test_model.py
+	$(UV) run python test_model.py
 
 generate-key: ## Generate new encryption key
-	uv run python scripts/generate_encryption_key.py
+	$(UV) run python scripts/generate_encryption_key.py
 
 seed-data: ## Seed database with initial data
-	uv run python scripts/seed_roles.py
-	uv run python scripts/seed_packages.py
+	$(UV) run python scripts/seed_roles.py
+	$(UV) run python scripts/seed_packages.py
 
 validate: ## Run all validation checks
 	make format-check

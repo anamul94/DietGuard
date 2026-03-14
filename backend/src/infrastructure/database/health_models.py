@@ -27,12 +27,14 @@ class MedicalReport(Base):
     raw_payload = Column(JSONB, nullable=False)
     structured_summary = Column(Text, nullable=True)
     report_date = Column(Date, nullable=True, index=True)
+    report_category = Column(String(50), nullable=False, default="general", index=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index("idx_medical_reports_user_version", "user_id", "version", unique=True),
         Index("idx_medical_reports_user_current", "user_id", "is_current"),
+        Index("idx_medical_reports_user_current_category", "user_id", "report_category", "is_current"),
     )
 
 
@@ -42,6 +44,7 @@ class MedicalReportEntity(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source_report_id = Column(UUID(as_uuid=True), ForeignKey("medical_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_category = Column(String(50), nullable=False, default="general", index=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     entity_type = Column(String(50), nullable=False, index=True)
     category = Column(String(50), nullable=True, index=True)
@@ -63,6 +66,7 @@ class MedicalReportEntity(Base):
 
     __table_args__ = (
         Index("idx_report_entities_user_current_type", "user_id", "is_current", "entity_type"),
+        Index("idx_report_entities_user_current_category", "user_id", "report_category", "is_current"),
         Index("idx_report_entities_user_canonical_date", "user_id", "canonical_name", "effective_date"),
     )
 
@@ -73,6 +77,7 @@ class MedicalConditionSnapshot(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source_report_id = Column(UUID(as_uuid=True), ForeignKey("medical_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_category = Column(String(50), nullable=False, default="general", index=True)
     snapshot_date = Column(Date, nullable=True, index=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     diabetes_status = Column(String(20), nullable=False, default="unknown")
@@ -88,6 +93,7 @@ class MedicalConditionSnapshot(Base):
 
     __table_args__ = (
         Index("idx_condition_snapshots_user_current", "user_id", "is_current"),
+        Index("idx_condition_snapshots_user_current_category", "user_id", "report_category", "is_current"),
     )
 
 
@@ -97,6 +103,7 @@ class LabResult(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source_report_id = Column(UUID(as_uuid=True), ForeignKey("medical_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_category = Column(String(50), nullable=False, default="general", index=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     lab_date = Column(Date, nullable=True, index=True)
     test_name = Column(String(255), nullable=False)
@@ -110,6 +117,7 @@ class LabResult(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
+        Index("idx_lab_results_user_current_category", "user_id", "report_category", "is_current"),
         Index("idx_lab_results_user_canonical_date", "user_id", "canonical_name", "lab_date"),
     )
 
@@ -120,6 +128,7 @@ class MedicationSchedule(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source_report_id = Column(UUID(as_uuid=True), ForeignKey("medical_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_category = Column(String(50), nullable=False, default="general", index=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     medication_name = Column(String(255), nullable=False)
     dosage = Column(String(100), nullable=True)
@@ -130,6 +139,7 @@ class MedicationSchedule(Base):
 
     __table_args__ = (
         Index("idx_medication_schedules_user_current", "user_id", "is_current"),
+        Index("idx_medication_schedules_user_current_category", "user_id", "report_category", "is_current"),
     )
 
 
@@ -250,4 +260,26 @@ class CorrelationInsight(Base):
 
     __table_args__ = (
         Index("idx_correlation_insights_user_date", "user_id", "insight_date"),
+    )
+
+
+class NutritionTarget(Base):
+    __tablename__ = "nutrition_targets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_date = Column(Date, nullable=False, index=True)
+    calories_kcal = Column(Integer, nullable=False)
+    protein_g = Column(Numeric(10, 2), nullable=False)
+    carbohydrates_g = Column(Numeric(10, 2), nullable=False)
+    fat_g = Column(Numeric(10, 2), nullable=False)
+    fiber_g = Column(Numeric(10, 2), nullable=False)
+    source = Column(String(30), nullable=False, default="calculated")
+    calculation_basis = Column(JSONB, nullable=False, default=dict)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_nutrition_targets_user_active", "user_id", "is_active"),
+        Index("idx_nutrition_targets_user_target_date", "user_id", "target_date"),
     )

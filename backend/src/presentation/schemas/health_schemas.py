@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class StructuredLabResult(BaseModel):
+    report_category: Optional[str] = None
     test_name: str
     canonical_name: Optional[str] = None
     value_text: str
@@ -21,6 +22,7 @@ class StructuredLabResult(BaseModel):
 
 
 class StructuredMedication(BaseModel):
+    report_category: Optional[str] = None
     medication_name: str
     dosage: Optional[str] = None
     schedule: Optional[str] = None
@@ -29,6 +31,7 @@ class StructuredMedication(BaseModel):
 
 
 class StructuredReportEntity(BaseModel):
+    report_category: Optional[str] = None
     entity_type: str
     category: Optional[str] = None
     label: str
@@ -67,8 +70,22 @@ class ConditionSnapshotResponse(BaseModel):
     extra_conditions: List[str] = Field(default_factory=list)
 
 
+class StructuredReportMetadata(BaseModel):
+    report_id: Optional[str] = None
+    version: Optional[int] = None
+    report_date: Optional[str] = None
+    summary: Optional[str] = None
+    filenames: List[str] = Field(default_factory=list)
+    report_category: Optional[str] = None
+    document_type: Optional[str] = None
+    title: Optional[str] = None
+    parser_version: Optional[str] = None
+    source_documents: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class StructuredHealthProfileResponse(BaseModel):
-    report: Dict[str, Any]
+    report: StructuredReportMetadata
+    current_reports: List[StructuredReportMetadata] = Field(default_factory=list)
     snapshot: ConditionSnapshotResponse
     labs: List[StructuredLabResult]
     medications: List[StructuredMedication]
@@ -76,6 +93,7 @@ class StructuredHealthProfileResponse(BaseModel):
     sections: List[StructuredReportSection] = Field(default_factory=list)
     unmapped_entities: List[StructuredReportEntity] = Field(default_factory=list)
     lab_trends: List[Dict[str, Any]]
+    active_categories: List[str] = Field(default_factory=list)
     health_context_summary: str
 
 
@@ -129,6 +147,57 @@ class MealConfirmResponse(BaseModel):
     meal_time: str
     food_analysis: Dict[str, Any]
     source_filenames: List[str] = Field(default_factory=list)
+
+
+class MealNutritionMetricResponse(BaseModel):
+    value: float
+    unit: str
+
+
+class MealNutritionTotalsResponse(BaseModel):
+    calories: MealNutritionMetricResponse
+    protein: MealNutritionMetricResponse
+    carbohydrates: MealNutritionMetricResponse
+    fat: MealNutritionMetricResponse
+    fiber: MealNutritionMetricResponse
+    sugar: MealNutritionMetricResponse
+
+
+class MealHistoryItemResponse(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+    role: str
+    preparation: Optional[str] = None
+    source_label: Optional[str] = None
+    confidence: Optional[float] = None
+
+
+class TodayMealNutritionSummaryResponse(BaseModel):
+    date: str
+    meal_count: int
+    nutrition_totals: MealNutritionTotalsResponse
+
+
+class MealHistoryEntryResponse(BaseModel):
+    meal_event_id: str
+    meal_type: str
+    meal_date: str
+    meal_time: str
+    source: str
+    notes: Optional[str] = None
+    food_names: List[str] = Field(default_factory=list)
+    items: List[MealHistoryItemResponse] = Field(default_factory=list)
+    source_filenames: List[str] = Field(default_factory=list)
+    nutrition_totals: MealNutritionTotalsResponse
+    food_analysis: Dict[str, Any]
+
+
+class PaginatedMealHistoryResponse(BaseModel):
+    items: List[MealHistoryEntryResponse]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class VitalEntryCreate(BaseModel):
@@ -190,3 +259,39 @@ class PeriodInsightsResponse(BaseModel):
     associations: List[CorrelationInsightResponse]
     narrative: str
     possible_factors: List[str]
+
+
+class NutritionTargetResponse(BaseModel):
+    target_id: str
+    target_date: str
+    calories_kcal: int
+    protein_g: float
+    carbohydrates_g: float
+    fat_g: float
+    fiber_g: float
+    source: str
+    calculation_basis: Dict[str, Any] = Field(default_factory=dict)
+    is_active: bool
+    created_at: Optional[str] = None
+
+
+class NutritionTargetManualCreateRequest(BaseModel):
+    target_date: date
+    calories_kcal: int = Field(..., ge=800, le=6000)
+    protein_g: float = Field(..., ge=0, le=500)
+    carbohydrates_g: float = Field(..., ge=0, le=1000)
+    fat_g: float = Field(..., ge=0, le=300)
+    fiber_g: float = Field(..., ge=0, le=150)
+
+
+class AdherenceMetricResponse(BaseModel):
+    percent: Optional[float] = None
+    status: str
+
+
+class NutritionTargetAdherenceResponse(BaseModel):
+    date: str
+    target: NutritionTargetResponse
+    intake: Dict[str, float | int]
+    adherence: Dict[str, AdherenceMetricResponse]
+    generated_at: str

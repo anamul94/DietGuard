@@ -1,7 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-APP_DIR="/opt/dietguard"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$APP_DIR"
 
 echo "Current directory: $(pwd)"
@@ -83,6 +84,7 @@ fi
 
 # Ensure uv is discoverable on PATH (covers typical locations)
 export PATH="$HOME/.local/bin:/home/ubuntu/.local/bin:$HOME/.cargo/bin:/home/ubuntu/.cargo/bin:/usr/local/bin:/usr/bin:$PATH"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then

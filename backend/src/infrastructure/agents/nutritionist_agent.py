@@ -1,7 +1,7 @@
 import asyncio
 from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
-from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_bedrock_chat_model, get_bedrock_config
 from ..utils.nutrition_utils import format_metric
 from .agent_response import AgentResponse
 
@@ -109,15 +109,7 @@ async def nutritionist_agent(
         # Extract metadata
         meta = response.response_metadata if hasattr(response, 'response_metadata') else {}
         usage = response.usage_metadata if hasattr(response, 'usage_metadata') else {}
-        
-        # Print metadata for debugging
-        print("=" * 50)
-        print("NUTRITIONIST AGENT METADATA")
-        print("=" * 50)
-        # print(f"Response Metadata: {meta}")
-        # print(f"Usage Metadata: {usage}")
-        # print("=" * 50)
-        
+
         # Prepare metadata for token tracking
         metadata = {
             "model_name": meta.get("model_name", "unknown"),

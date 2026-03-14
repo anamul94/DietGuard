@@ -31,6 +31,8 @@ class AuthService:
         current_location: Optional[str] = None,
         birth_place: Optional[str] = None,
         nationality: Optional[str] = None,
+        activity_level: Optional[str] = "sedentary",
+        timezone_name: Optional[str] = "UTC",
         date_of_birth: Optional[datetime] = None,
         # Request metadata
         ip_address: Optional[str] = None,
@@ -100,6 +102,8 @@ class AuthService:
                 current_location=current_location,
                 birth_place=birth_place,
                 nationality=nationality,
+                activity_level=activity_level,
+                timezone=timezone_name,
                 date_of_birth=date_of_birth,
                 ip_address=ip_address,
                 user_agent=user_agent
@@ -351,16 +355,7 @@ class AuthService:
         await db.commit()
         
         logger.info("Password reset initiated", user_id=str(user.id), email=email)
-        
-        # In production, send email here
-        # For now, just log to console
-        print(f"\n{'='*60}")
-        print(f"PASSWORD RESET TOKEN (send via email in production):")
-        print(f"Email: {email}")
-        print(f"Token: {reset_token}")
-        print(f"Expires: {expires_at}")
-        print(f"{'='*60}\n")
-        
+
         return reset_token
     
     @staticmethod

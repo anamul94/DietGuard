@@ -5,10 +5,9 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from src.infrastructure.database.database import Base, DATABASE_URL
-import os
-from src.infrastructure.database.models import *
-from src.infrastructure.database.auth_models import *
-from src.infrastructure.database.health_models import *
+from src.infrastructure.database.auth_models import *  # noqa: F401,F403
+from src.infrastructure.database.health_models import *  # noqa: F401,F403
+from src.infrastructure.database.patient_models import *  # noqa: F401,F403
 
 config = context.config
 # Ensure Alembic uses the same DB URL as the app

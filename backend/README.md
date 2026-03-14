@@ -157,9 +157,12 @@ Key current endpoints:
 - `GET /api/v1/health/profile/current`
 - `POST /api/v1/health/meals/draft-from-image`
 - `POST /api/v1/health/meals/confirm`
+- `GET /api/v1/health/meals/today-summary`
+- `GET /api/v1/health/meals/history`
 - `POST /api/v1/health/vitals`
 - `GET /api/v1/health/insights/daily`
 - `GET /api/v1/health/insights/weekly`
+- `GET /api/v1/health/insights/monthly`
 
 Detailed reference:
 

@@ -39,6 +39,7 @@ from .ingredient_schemas import (
     IngredientScanResponse,
 )
 from .health_schemas import (
+    AdherenceMetricResponse,
     ConditionSnapshotResponse,
     CorrelationInsightResponse,
     DeviceVitalSyncRequest,
@@ -46,6 +47,9 @@ from .health_schemas import (
     MealConfirmResponse,
     MealDraftItem,
     MealDraftResponse,
+    NutritionTargetAdherenceResponse,
+    NutritionTargetManualCreateRequest,
+    NutritionTargetResponse,
     PeriodInsightsResponse,
     StructuredHealthProfileResponse,
     StructuredReportEntity,
@@ -91,6 +95,10 @@ __all__ = [
     "MealConfirmResponse",
     "MealDraftItem",
     "MealDraftResponse",
+    "NutritionTargetAdherenceResponse",
+    "NutritionTargetManualCreateRequest",
+    "NutritionTargetResponse",
+    "AdherenceMetricResponse",
     "PeriodInsightsResponse",
     "StructuredHealthProfileResponse",
     "StructuredReportEntity",

@@ -5,22 +5,29 @@ This module contains API endpoints for AI-powered food and medical report analys
 All endpoints require authentication and enforce subscription limits.
 """
 
-from typing import Annotated, List, Optional
+from typing import Annotated, List
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status, Query
-from fastapi.responses import JSONResponse
+from datetime import date as date_type, datetime, timezone
+
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..schemas.food_schemas import FoodUploadResponse, FoodAnalysis
+from ..schemas.food_schemas import FoodUploadResponse
 from ..schemas.nutrition_schemas import NutritionAdviceRequest, NutritionAdviceResponse
-from ..schemas.ai_schemas import ReportUploadResponse, ErrorResponse, SubscriptionLimitError
+from ..schemas.ai_schemas import ErrorResponse, SubscriptionLimitError
 from ..schemas.nutrition_calculator_schemas import NutritionCalculationRequest, NutritionCalculationResponse
 from ..schemas.ingredient_schemas import IngredientScanResponse
+from ..schemas.health_schemas import PaginatedMealHistoryResponse, StructuredHealthProfileResponse
 from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User
 from ...infrastructure.auth.dependencies import get_current_active_user
 from ...application.services.subscription_service import SubscriptionService
-from ...application.services.health_utils import merge_dynamic_reports, parse_llm_json_payload
+from ...application.services.health_utils import (
+    group_food_items_for_review,
+    group_report_analyses_by_category,
+    merge_dynamic_reports,
+    parse_llm_json_payload,
+)
 from ...application.services.token_usage_service import TokenUsageService
 from ...application.services.health_timeline_service import HealthTimelineService
 from ...infrastructure.utils.logger import logger
@@ -29,10 +36,8 @@ from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_p
 from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
-from ...infrastructure.agents.summary_agent import summary_agent as generate_summary
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
 from ...infrastructure.agents.ingredient_scanner_agent import ingredient_scanner_agent
-from ...infrastructure.database.postgres_client import PostgresClient
 
 
 router = APIRouter(tags=["AI Agents"])
@@ -58,6 +63,21 @@ MULTI_FILE_UPLOAD_SCHEMA = {
     },
     "required": True,
 }
+
+
+def _build_meal_items_from_food_analysis(food_analysis: dict) -> list[dict]:
+    reviewed = group_food_items_for_review(food_analysis)
+    return [
+        {
+            "name": item["name"],
+            "quantity": item.get("quantity"),
+            "role": item.get("role") or "main",
+            "preparation": item.get("preparation"),
+            "source_label": item.get("source_label"),
+            "confidence": item.get("confidence"),
+        }
+        for item in reviewed["items"]
+    ]
 
 
 @router.post(
@@ -459,57 +479,44 @@ async def upload_report(
             })
         
         
-        # Medical reports don't need nutritional summary
-        # The extracted EHR data from report_agent is sufficient
-        # Check if user has existing report
-        postgres_client = PostgresClient()
-        existing_report_data = await postgres_client.get_report_data(str(current_user.id))
-        
-        from datetime import datetime, timezone
-        
-        previous_version = 0
-        if existing_report_data:
-            previous_version = int(existing_report_data.get("data", {}).get("version") or 0)
-
         combined_report = merge_dynamic_reports(
             [item.get("analysis", {}) for item in individual_analyses],
             filenames=filenames,
         )
-        report_data = {
-            "ehr_data": combined_report,
-            "uploaded_at": datetime.now(timezone.utc).isoformat(),
-            "filenames": filenames,
-            "version": previous_version + 1,
-            "individual_analyses": individual_analyses,
-        }
-        
-        # Save to database
-        await postgres_client.save_report_data(
-            user_id=str(current_user.id),
-            data=report_data
-        )
-        logger.info("Report saved successfully", user_id=str(current_user.id), version=report_data.get("version"))
+        grouped_reports = group_report_analyses_by_category(individual_analyses)
+        uploaded_at = datetime.now(timezone.utc).isoformat()
 
-        structured_profile = None
-        try:
-            structured_profile = await HealthTimelineService.sync_structured_report_data(
-                db=db,
-                user_id=current_user.id,
-                parsed_report=report_data.get("ehr_data") or {},
-                filenames=filenames,
-            )
-            logger.info(
-                "Structured report data synced successfully",
-                user_id=str(current_user.id),
-                structured_version=structured_profile.get("version"),
-            )
-        except Exception as structured_error:
-            logger.error(
-                "Structured report sync failed",
-                user_id=str(current_user.id),
-                error=str(structured_error),
-                exc_info=True,
-            )
+        structured_profiles = []
+        for grouped_report in grouped_reports:
+            try:
+                structured_profile = await HealthTimelineService.sync_structured_report_data(
+                    db=db,
+                    user_id=current_user.id,
+                    parsed_report=grouped_report.get("merged_report") or {},
+                    filenames=grouped_report.get("filenames") or [],
+                )
+                structured_profiles.append(
+                    {
+                        **structured_profile,
+                        "filenames": grouped_report.get("filenames") or [],
+                    }
+                )
+                logger.info(
+                    "Structured report data synced successfully",
+                    user_id=str(current_user.id),
+                    report_category=structured_profile.get("report_category"),
+                    structured_version=structured_profile.get("version"),
+                )
+            except Exception as structured_error:
+                logger.error(
+                    "Structured report sync failed",
+                    user_id=str(current_user.id),
+                    report_category=grouped_report.get("report_category"),
+                    filenames=grouped_report.get("filenames") or [],
+                    error=str(structured_error),
+                    exc_info=True,
+                )
+        latest_version = max((profile.get("version") or 0 for profile in structured_profiles), default=0) or None
         
         # Track token usage for report extraction
         await TokenUsageService.track_token_usage(
@@ -528,16 +535,17 @@ async def upload_report(
         
         logger.info(f"Report analysis completed for user {current_user.id}", 
                    files_processed=len(filenames),
-                   version=report_data.get("version"))
+                   version=latest_version)
         
         # Return response
         return {
             "files_processed": len(filenames),
             "filenames": filenames,
-            "ehr_data": report_data.get("ehr_data"),
-            "version": report_data.get("version"),
-            "uploaded_at": report_data.get("uploaded_at"),
-            "structured_health_profile": structured_profile,
+            "ehr_data": combined_report,
+            "version": latest_version,
+            "uploaded_at": uploaded_at,
+            "structured_health_profile": structured_profiles[0] if len(structured_profiles) == 1 else None,
+            "structured_health_profiles": structured_profiles,
         }
 
         
@@ -616,7 +624,6 @@ async def get_nutrition_advice(
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
         
         from ...application.services.patient_service import PatientService
-        from datetime import datetime, timezone
         
         # Get patient profile data (includes age, gender, etc.)
         patient_profile = await PatientService.get_patient_profile(db, current_user.id)
@@ -631,48 +638,43 @@ async def get_nutrition_advice(
         logger.info("Patient profile retrieved", user_id=str(current_user.id), 
                    age=age, gender=gender, has_weight=weight is not None, has_height=height is not None)
         
-        # Check for medical report
-        postgres_client = PostgresClient()
-        report_data = await postgres_client.get_report_data(str(current_user.id))
         medical_report = ""
         health_profile = await HealthTimelineService.get_current_health_profile(db, current_user.id)
 
         if health_profile["report"]["version"]:
             medical_report = health_profile["health_context_summary"]
             logger.info("Structured medical profile found for user", user_id=str(current_user.id))
-        elif report_data:
-            data = report_data.get("data", {})
-            medical_report = str(data.get("combined_summary") or data.get("ehr_data") or "")
-            logger.info("Legacy medical report found for user", user_id=str(current_user.id))
         else:
             logger.info("No medical report found for user", user_id=str(current_user.id))
         
         # Prepare meal timing data
-        from datetime import date as date_type, time as time_type
+        from datetime import time as time_type
         meal_date = request.meal_date or date_type.today()
         
         # Parse meal_time string to time object (HH:MM -> time)
         hour, minute = map(int, request.meal_time.split(':'))
         meal_time = time_type(hour, minute)
         
-        # Save food_analysis to database with meal timing
         food_analysis_data = request.food_analysis.model_dump()
-        await postgres_client.save_nutrition_data(
-            user_id=str(current_user.id),
-            data={
-                "food_analysis": food_analysis_data,
-                "meal_type": request.meal_type,
-                "meal_time": request.meal_time,
-                "meal_date": meal_date.isoformat(),
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            },
-            meal_time=meal_time,
-            meal_date=meal_date
+        meal_items = _build_meal_items_from_food_analysis(food_analysis_data)
+        await HealthTimelineService.create_meal_event(
+            db=db,
+            user_id=current_user.id,
+            meal_type=request.meal_type,
+            meal_date=meal_date,
+            meal_time_value=meal_time,
+            items=meal_items,
+            nutrition=food_analysis_data["nutrition"],
+            fooditem_details=food_analysis_data.get("fooditem_details", []),
+            source="nutrition_advice",
         )
-        logger.info("Food analysis saved to database with meal timing", 
-                   user_id=str(current_user.id),
-                   meal_time=request.meal_time,
-                   meal_date=str(meal_date))
+        logger.info(
+            "Food analysis saved to structured meal timeline",
+            user_id=str(current_user.id),
+            meal_time=request.meal_time,
+            meal_date=str(meal_date),
+            item_count=len(meal_items),
+        )
         
         # Build a readable meal summary from the item-level nutrition structure
         fooditems = extract_food_item_names(food_analysis_data)
@@ -804,34 +806,14 @@ async def calculate_nutrition(
     Calculate nutrition values for given food items.
     
     Accepts food item names with quantities and returns clinically accurate nutrition data.
-    Updates previously saved nutrition data if it was saved from food upload (not from nutrition advice).
+    If `old_food_analysis` is provided, it is used as optional reference context.
     """
     try:
         logger.info(f"Nutrition calculation request from user {current_user.id}", 
                    item_count=len(request.fooditems),
                    has_old_analysis=request.old_food_analysis is not None)
         
-        # Determine old food analysis for reference
         old_food_analysis = request.old_food_analysis
-        
-        # If not provided in request, try to fetch from database
-        if not old_food_analysis:
-            try:
-                postgres_client = PostgresClient()
-                existing_data = await postgres_client.get_nutrition_data(str(current_user.id))
-                
-                if existing_data:
-                    data_content = existing_data.get("data", {})
-                    # Extract old food analysis if available
-                    if "food_analysis" in data_content:
-                        old_food_analysis = data_content.get("food_analysis")
-                        logger.info("Using old food analysis from database as reference", 
-                                   user_id=str(current_user.id))
-            except Exception as e:
-                # If DB fetch fails (e.g., multiple rows), continue without reference
-                logger.warning("Failed to fetch old food analysis from database, continuing without reference", 
-                             user_id=str(current_user.id), error=str(e))
-                old_food_analysis = None
         
         # Call nutrition calculator agent with optional reference data
         nutrition_response = await nutrition_calculator_agent(
@@ -883,177 +865,62 @@ async def calculate_nutrition(
 
 
 @router.get(
-    "/nutrition-data",
-    summary="Get My Saved Nutrition Data",
-    description="""
-    Retrieve your previously saved nutrition analysis data.
-    
-    **Authentication Required:** Yes (JWT Bearer token)
-    
-    **Returns:**
-    - Saved nutrition analysis data
-    - Meal type
-    - Nutritionist recommendations
-    """,
-    tags=["AI Agents"]
-)
-async def get_my_nutrition_data(
-    current_user: User = Depends(get_current_active_user)
-):
-    """Get saved nutrition data for authenticated user"""
-    logger.info("Nutrition data requested", user_id=str(current_user.id))
-    postgres_client = PostgresClient()
-    data = await postgres_client.get_nutrition_data(str(current_user.id))
-    
-    if not data:
-        logger.warning("Nutrition data not found", user_id=str(current_user.id))
-        raise HTTPException(status_code=404, detail="No nutrition data found or data expired")
-    
-    logger.info("Nutrition data retrieved successfully", user_id=str(current_user.id))
-    return data
-
-
-@router.get(
     "/report-data",
-    summary="Get My Saved Report Data",
+    response_model=StructuredHealthProfileResponse,
+    summary="Get My Structured Report Data",
     description="""
-    Retrieve your previously saved medical report analysis data.
+    Retrieve the current structured health profile derived from uploaded reports.
     
     **Authentication Required:** Yes (JWT Bearer token)
     
     **Returns:**
-    - Saved report analysis data
-    - Individual file analyses
-    - Combined summary
+    - Latest uploaded report metadata
+    - All active current-category reports
+    - Merged snapshots, labs, medications, and entities
     """,
     tags=["AI Agents"]
 )
 async def get_my_report_data(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Get saved report data for authenticated user"""
-    logger.info("Report data requested", user_id=str(current_user.id))
-    postgres_client = PostgresClient()
-    data = await postgres_client.get_report_data(str(current_user.id))
-    
-    if not data:
-        logger.warning("Report data not found", user_id=str(current_user.id))
-        raise HTTPException(status_code=404, detail="No report data found or data expired")
-    
-    logger.info("Report data retrieved successfully", user_id=str(current_user.id))
-    return data
+    logger.info("Structured report data requested", user_id=str(current_user.id))
+    profile = await HealthTimelineService.get_current_health_profile(db, current_user.id)
+    if not profile["report"]["version"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No structured medical report found")
+    return profile
 
 
 @router.delete(
     "/report-data",
-    summary="Delete My Saved Report Data",
+    summary="Delete My Structured Report Data",
     description="""
-    Delete your previously saved medical report analysis data.
+    Delete all structured medical report history for the authenticated user.
     
     **Authentication Required:** Yes (JWT Bearer token)
     
     **Returns:**
-    - Success message
+    - Success message with deleted report count
     """,
     tags=["AI Agents"]
 )
 async def delete_my_report_data(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Delete saved report data for authenticated user"""
-    logger.info("Report deletion requested", user_id=str(current_user.id))
-    postgres_client = PostgresClient()
-    success = await postgres_client.delete_report_data(str(current_user.id))
-    
-    if not success:
-        logger.warning("Report data not found for deletion", user_id=str(current_user.id))
-        raise HTTPException(status_code=404, detail="No report data found to delete")
-    
-    logger.info("Report data deleted successfully", user_id=str(current_user.id))
-    return {"message": "Report data deleted successfully"}
-
-
-# Legacy endpoints for backward compatibility (deprecated)
-@router.get(
-    "/get-nutrition/{user_id}",
-    summary="[DEPRECATED] Get Saved Nutrition Data",
-    description="""
-    **DEPRECATED:** Use GET /api/v1/ai/nutrition-data instead (with JWT authentication).
-    
-    This endpoint is kept for backward compatibility only.
-    """,
-    deprecated=True,
-    tags=["AI Agents"]
-)
-async def get_nutrition_data_legacy(user_id: str):
-    """Get saved nutrition data for user (legacy)"""
-    logger.info("Nutrition data requested (legacy)", user_id=user_id)
-    postgres_client = PostgresClient()
-    data = await postgres_client.get_nutrition_data(user_id)
-    
-    if not data:
-        logger.warning("Nutrition data not found", user_id=user_id)
-        raise HTTPException(status_code=404, detail="No nutrition data found or data expired")
-    
-    logger.info("Nutrition data retrieved successfully", user_id=user_id)
-    return data
-
-
-@router.get(
-    "/get-report/{user_id}",
-    summary="[DEPRECATED] Get Saved Report Data",
-    description="""
-    **DEPRECATED:** Use GET /api/v1/ai/report-data instead (with JWT authentication).
-    
-    This endpoint is kept for backward compatibility only.
-    """,
-    deprecated=True,
-    tags=["AI Agents"]
-)
-async def get_report_data_legacy(user_id: str):
-    """Get saved report data for user (legacy)"""
-    logger.info("Report data requested (legacy)", user_id=user_id)
-    postgres_client = PostgresClient()
-    data = await postgres_client.get_report_data(user_id)
-    
-    if not data:
-        logger.warning("Report data not found", user_id=user_id)
-        raise HTTPException(status_code=404, detail="No report data found or data expired")
-    
-    logger.info("Report data retrieved successfully", user_id=user_id)
-    return data
-
-
-@router.delete(
-    "/delete-report/{user_id}",
-    summary="[DEPRECATED] Delete Saved Report Data",
-    description="""
-    **DEPRECATED:** Use DELETE /api/v1/ai/report-data instead (with JWT authentication).
-    
-    This endpoint is kept for backward compatibility only.
-    """,
-    deprecated=True,
-    tags=["AI Agents"]
-)
-async def delete_report_data_legacy(user_id: str):
-    """Delete saved report data for user (legacy)"""
-    logger.info("Report deletion requested (legacy)", user_id=user_id)
-    postgres_client = PostgresClient()
-    success = await postgres_client.delete_report_data(user_id)
-    
-    if not success:
-        logger.warning("Report data not found for deletion", user_id=user_id)
-        raise HTTPException(status_code=404, detail="No report data found to delete")
-    
-    logger.info("Report data deleted successfully", user_id=user_id)
-    return {"message": f"Report data deleted for user: {user_id}"}
+    logger.info("Structured report deletion requested", user_id=str(current_user.id))
+    deleted_count = await HealthTimelineService.delete_report_history(db, current_user.id)
+    if deleted_count == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No report history found to delete")
+    return {"message": "Structured report history deleted successfully", "deleted_count": deleted_count}
 
 
 @router.get(
     "/nutrition-data",
+    response_model=PaginatedMealHistoryResponse,
     summary="Get Nutrition Data with Pagination",
     description="""
-    Retrieve nutrition analysis history with pagination and date filtering.
+    Retrieve structured meal history with pagination and date filtering.
     
     **Authentication Required:** Yes (JWT Bearer token)
     
@@ -1070,7 +937,7 @@ async def delete_report_data_legacy(user_id: str):
     
     **Example Request:**
     ```
-    GET /api/v1/ai/nutrition-data?start_date=2025-12-01&end_date=2025-12-27&page=1&page_size=10
+    GET /api/v1/ai/nutrition-data?start_date=2026-03-01&end_date=2026-03-14&page=1&page_size=10
     ```
     """,
     responses={
@@ -1083,112 +950,86 @@ async def delete_report_data_legacy(user_id: str):
     }
 )
 async def get_nutrition_data_paginated(
-    start_date: Optional[str] = Query(
+    start_date: date_type | None = Query(
         None, 
         description="Start date filter (format: YYYY-MM-DD)",
-        example="2025-12-01"
+        examples=["2026-03-01"],
     ),
-    end_date: Optional[str] = Query(
+    end_date: date_type | None = Query(
         None, 
         description="End date filter (format: YYYY-MM-DD)",
-        example="2025-12-27"
+        examples=["2026-03-14"],
     ),
     page: int = Query(
         1, 
         ge=1, 
         description="Page number (1-indexed)",
-        example=1
+        examples=[1],
     ),
     page_size: int = Query(
         10, 
         ge=1, 
         le=100, 
         description="Items per page (max 100)",
-        example=10
+        examples=[10],
     ),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Get paginated nutrition data for the authenticated user.
-    
-    Supports date filtering and pagination for efficient data retrieval.
+    Get paginated structured meal history for the authenticated user.
     """
     try:
-        from datetime import datetime
-        
-        # Validate and parse dates (accept YYYY-MM-DD format)
-        start_datetime = None
-        end_datetime = None
-        
-        if start_date:
-            try:
-                # Parse date string (YYYY-MM-DD) and convert to datetime at start of day
-                start_datetime = datetime.fromisoformat(start_date + "T00:00:00")
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid start_date format. Use YYYY-MM-DD format (e.g., 2025-12-01)"
-                )
-        
-        if end_date:
-            try:
-                # Parse date string (YYYY-MM-DD) and convert to datetime at end of day
-                end_datetime = datetime.fromisoformat(end_date + "T23:59:59")
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid end_date format. Use YYYY-MM-DD format (e.g., 2025-12-27)"
-                )
-        
-        logger.info("Fetching paginated nutrition data", 
-                   user_id=str(current_user.id),
-                   start_date=start_date,
-                   end_date=end_date,
-                   page=page,
-                   page_size=page_size)
-        
-        # Get paginated data
-        postgres_client = PostgresClient()
-        result = await postgres_client.get_nutrition_data_paginated(
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="start_date cannot be after end_date",
+            )
+
+        logger.info(
+            "Fetching paginated structured meal history",
             user_id=str(current_user.id),
-            start_date=start_datetime,
-            end_date=end_datetime,
+            start_date=start_date.isoformat() if start_date else None,
+            end_date=end_date.isoformat() if end_date else None,
             page=page,
-            page_size=page_size
+            page_size=page_size,
         )
-        
-        logger.info("Nutrition data retrieved successfully",
-                   user_id=str(current_user.id),
-                   total_count=result["total_count"],
-                   items_returned=len(result["items"]))
-        
-        return result
-        
+
+        return await HealthTimelineService.get_meal_history(
+            db=db,
+            user_id=current_user.id,
+            start_date=start_date,
+            end_date=end_date,
+            page=page,
+            page_size=page_size,
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Failed to retrieve nutrition data",
-                    user_id=str(current_user.id),
-                    error=str(e),
-                    exception_type=type(e).__name__)
+        logger.error(
+            "Failed to retrieve structured meal history",
+            user_id=str(current_user.id),
+            error=str(e),
+            exception_type=type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve nutrition data. Please try again later."
+            detail="Failed to retrieve meal history. Please try again later."
         )
 
 
 @router.get(
     "/nutrition-data/today",
+    response_model=PaginatedMealHistoryResponse,
     summary="Get Today's Nutrition Data",
     description="""
-    Retrieve all nutrition analyses from today for the authenticated user.
+    Retrieve today's structured meal history for the authenticated user.
     
     **Authentication Required:** Yes (JWT Bearer token)
     
     **Returns:**
-    - List of all nutrition analyses from today
+    - Today's confirmed meal entries
     - Sorted by newest first
-    - Automatically filters by current date (00:00 to 23:59)
     """,
     responses={
         200: {
@@ -1200,54 +1041,35 @@ async def get_nutrition_data_paginated(
     }
 )
 async def get_todays_nutrition_data(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Get all nutrition data from today for the authenticated user.
-    
-    Automatically filters by today's date in the user's timezone.
+    Get today's structured meal history for the authenticated user.
     """
     try:
-        from datetime import datetime, timezone, timedelta
-        
-        # Get today's date range (UTC)
-        now_utc = datetime.now(timezone.utc)
-        start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = now_utc.replace(hour=23, minute=59, second=59, microsecond=999999)
-        
-        logger.info("Fetching today's nutrition data", 
-                   user_id=str(current_user.id),
-                   start_of_day=start_of_day.isoformat(),
-                   end_of_day=end_of_day.isoformat())
-        
-        # Get all data from today (no pagination limit)
-        postgres_client = PostgresClient()
-        result = await postgres_client.get_nutrition_data_paginated(
+        target_date = datetime.now(timezone.utc).date()
+        logger.info(
+            "Fetching today's structured meal history",
             user_id=str(current_user.id),
-            start_date=start_of_day,
-            end_date=end_of_day,
-            page=1,
-            page_size=100  # Get up to 100 entries from today
+            target_date=target_date.isoformat(),
         )
-        
-        logger.info("Today's nutrition data retrieved successfully",
-                   user_id=str(current_user.id),
-                   total_count=result["total_count"],
-                   items_returned=len(result["items"]))
-        
-        # Return just the items array for simpler response
-        return {
-            "date": now_utc.date().isoformat(),
-            "total_count": result["total_count"],
-            "items": result["items"]
-        }
-        
+        return await HealthTimelineService.get_meal_history(
+            db=db,
+            user_id=current_user.id,
+            start_date=target_date,
+            end_date=target_date,
+            page=1,
+            page_size=100,
+        )
     except Exception as e:
-        logger.error("Failed to retrieve today's nutrition data",
-                    user_id=str(current_user.id),
-                    error=str(e),
-                    exception_type=type(e).__name__)
+        logger.error(
+            "Failed to retrieve today's structured meal history",
+            user_id=str(current_user.id),
+            error=str(e),
+            exception_type=type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve today's nutrition data. Please try again later."
+            detail="Failed to retrieve today's meal history. Please try again later."
         )

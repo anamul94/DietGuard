@@ -28,6 +28,8 @@ class UserProfile(BaseModel):
     currentLocation: Optional[str] = None
     birthPlace: Optional[str] = None
     nationality: Optional[str] = None
+    activityLevel: Optional[str] = None
+    timezone: Optional[str] = None
     dateOfBirth: Optional[str] = None
     isActive: bool
     createdAt: str
@@ -77,6 +79,8 @@ async def get_current_user_profile(
         "currentLocation": persona.get("current_location"),
         "birthPlace": persona.get("birth_place"),
         "nationality": persona.get("nationality"),
+        "activityLevel": persona.get("activity_level"),
+        "timezone": persona.get("timezone"),
         "dateOfBirth": persona.get("date_of_birth"),
         "isActive": current_user.is_active,
         "createdAt": current_user.created_at.isoformat()
@@ -219,6 +223,26 @@ async def update_profile(
     if "nationality" in update_data and update_data["nationality"] is not None:
         persona_updates["nationality"] = update_data["nationality"]
         changes["nationality"] = update_data["nationality"]
+
+    if "activityLevel" in update_data and update_data["activityLevel"] is not None:
+        allowed_activity_levels = {"sedentary", "light", "moderate", "active", "very_active"}
+        if update_data["activityLevel"] not in allowed_activity_levels:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid activityLevel. Use: sedentary, light, moderate, active, very_active",
+            )
+        persona_updates["activity_level"] = update_data["activityLevel"]
+        changes["activityLevel"] = update_data["activityLevel"]
+
+    if "timezone" in update_data and update_data["timezone"] is not None:
+        timezone_value = str(update_data["timezone"]).strip()
+        if not timezone_value or len(timezone_value) > 50:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid timezone. Use a valid IANA timezone string up to 50 chars.",
+            )
+        persona_updates["timezone"] = timezone_value
+        changes["timezone"] = timezone_value
     
     if "dateOfBirth" in update_data and update_data["dateOfBirth"] is not None:
         # Parse date string to date object
@@ -276,6 +300,8 @@ async def update_profile(
         "currentLocation": updated_persona.get("current_location"),
         "birthPlace": updated_persona.get("birth_place"),
         "nationality": updated_persona.get("nationality"),
+        "activityLevel": updated_persona.get("activity_level"),
+        "timezone": updated_persona.get("timezone"),
         "dateOfBirth": updated_persona.get("date_of_birth"),
         "isActive": current_user.is_active,
         "createdAt": current_user.created_at.isoformat()
