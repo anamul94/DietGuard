@@ -5,9 +5,8 @@ Intelligently merges old and new medical reports, tracking history and maintaini
 """
 
 import asyncio
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
-from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_chat_model, get_chat_model_diagnostics
 from .agent_response import AgentResponse
 from typing import Dict, Any
 import json
@@ -34,15 +33,13 @@ async def report_merge_agent(
                has_new_report=bool(new_report))
     
     try:
-        config = get_bedrock_config()
-        llm = create_bedrock_chat_model(temperature=0.2)
+        diagnostics = get_chat_model_diagnostics(agent_name="report_merge_agent")
+        llm = create_chat_model(agent_name="report_merge_agent", temperature=0.2)
     except Exception as e:
         logger.error(
             "Report merge agent LLM initialization failed",
             error=str(e),
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            diagnostics=diagnostics if "diagnostics" in locals() else None,
         )
         return AgentResponse.error_response("Report merge service is temporarily unavailable.")
 
@@ -116,13 +113,9 @@ async def report_merge_agent(
     }
 
     try:
-        # Run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, user_message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: llm.invoke([system_message, user_message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
         
         # Extract metadata
         meta = response.response_metadata if hasattr(response, 'response_metadata') else {}
@@ -139,7 +132,7 @@ async def report_merge_agent(
         }
         
         # Get response text
-        response_text = response.text() if hasattr(response, "text") else str(response)
+        response_text = response.content if hasattr(response, "content") else str(response)
         
         # Try to parse as JSON to validate
         try:

@@ -5,6 +5,8 @@ Schemas for structured health timeline endpoints.
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
+from .food_schemas import FoodAnalysis
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -115,22 +117,39 @@ class MealDraftResponse(BaseModel):
     raw_food_analysis: Dict[str, Any]
 
 
-class ConfirmedMealItemInput(BaseModel):
-    name: str
-    quantity: Optional[str] = None
-    role: str = Field(default="main", pattern="^(main|side|condiment|beverage)$")
-    preparation: Optional[str] = None
-    source_label: Optional[str] = None
-    confidence: Optional[float] = None
-
-
 class MealConfirmRequest(BaseModel):
     meal_type: str = Field(..., pattern="^(breakfast|lunch|dinner|snack)$")
     meal_time: str = Field(..., pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]$")
     meal_date: date
-    items: List[ConfirmedMealItemInput]
-    source_filenames: List[str] = Field(default_factory=list)
-    notes: Optional[str] = None
+    food_analysis: FoodAnalysis = Field(
+        ...,
+        description="Full food analysis payload (per-item nutrition + totals) just like the agent returns.",
+        example={
+            "fooditem_details": [
+                {
+                    "name": "Grilled Chicken Salad",
+                    "quantity": "100g",
+                    "preparation": "grilled",
+                    "nutrition": {
+                        "calories": {"value": 320, "unit": "kcal"},
+                        "protein": {"value": 31, "unit": "g"},
+                        "carbohydrates": {"value": 5, "unit": "g"},
+                        "fat": {"value": 12, "unit": "g"},
+                        "fiber": {"value": 4, "unit": "g"},
+                        "sugar": {"value": 2, "unit": "g"}
+                    }
+                }
+            ],
+            "nutrition": {
+                "calories": {"value": 650, "unit": "kcal"},
+                "protein": {"value": 45, "unit": "g"},
+                "carbohydrates": {"value": 60, "unit": "g"},
+                "fat": {"value": 18, "unit": "g"},
+                "fiber": {"value": 10, "unit": "g"},
+                "sugar": {"value": 6, "unit": "g"}
+            }
+        },
+    )
 
     @field_validator("meal_date")
     @classmethod
@@ -145,7 +164,7 @@ class MealConfirmResponse(BaseModel):
     meal_type: str
     meal_date: str
     meal_time: str
-    food_analysis: Dict[str, Any]
+    food_analysis: FoodAnalysis
     source_filenames: List[str] = Field(default_factory=list)
 
 

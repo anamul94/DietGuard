@@ -5,6 +5,8 @@ Pure helpers for structured health normalization.
 from __future__ import annotations
 
 from collections import defaultdict
+
+VALID_ACTIVITY_LEVELS = frozenset({"sedentary", "light", "moderate", "active", "very_active"})
 import csv
 import io
 import json

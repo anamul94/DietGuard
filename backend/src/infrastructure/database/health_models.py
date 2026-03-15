@@ -283,3 +283,61 @@ class NutritionTarget(Base):
         Index("idx_nutrition_targets_user_active", "user_id", "is_active"),
         Index("idx_nutrition_targets_user_target_date", "user_id", "target_date"),
     )
+
+
+class DietPlan(Base):
+    __tablename__ = "diet_plans"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    valid_from = Column(Date, nullable=False, index=True)
+    valid_until = Column(Date, nullable=False, index=True)
+    generated_by = Column(String(50), nullable=False, default="diet_plan_agent_v1")
+    trigger = Column(String(50), nullable=False, default="manual")
+    source_report_ids = Column(JSONB, nullable=False, default=list)
+    calorie_target = Column(Integer, nullable=False)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    meals = relationship("DietPlanMeal", back_populates="diet_plan", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("idx_diet_plans_user_active", "user_id", "is_active"),
+        Index("idx_diet_plans_user_validity", "user_id", "valid_from", "valid_until"),
+    )
+
+
+class DietPlanMeal(Base):
+    __tablename__ = "diet_plan_meals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    diet_plan_id = Column(UUID(as_uuid=True), ForeignKey("diet_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    day_of_week = Column(Integer, nullable=False, index=True)  # 0=Monday, 6=Sunday
+    meal_type = Column(String(50), nullable=False, index=True)  # breakfast, lunch, dinner, snack
+    meal_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    foods = Column(JSONB, nullable=False, default=list)  # list of {name, quantity, calories, protein_g, carbs_g, fat_g}
+    total_calories = Column(Integer, nullable=False, default=0)
+    total_protein_g = Column(Numeric(10, 2), nullable=False, default=0)
+    notes = Column(Text, nullable=True)
+
+    diet_plan = relationship("DietPlan", back_populates="meals")
+
+class DailySummary(Base):
+    __tablename__ = "daily_summaries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    summary_date = Column(Date, nullable=False, index=True)
+    narrative = Column(Text, nullable=False)
+    stats_snapshot = Column(JSONB, nullable=False, default=dict)
+    adherence_score = Column(Integer, nullable=False, default=0)
+    alerts = Column(JSONB, nullable=False, default=list)
+    data_quality = Column(String(50), nullable=False, default="sufficient")
+    generated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_daily_summaries_user_date", "user_id", "summary_date"),
+    )
+

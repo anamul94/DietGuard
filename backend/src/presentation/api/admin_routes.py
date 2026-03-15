@@ -8,6 +8,7 @@ from datetime import datetime
 from ...infrastructure.database.database import get_db
 from ...infrastructure.database.auth_models import User, AuditLog, Role, UserRole
 from ...infrastructure.auth.dependencies import require_admin
+from ...infrastructure.scheduler.jobs import daily_summary_job, weekly_plan_refresh_job
 from ...infrastructure.utils.logger import logger
 
 router = APIRouter(tags=["Admin"])
@@ -180,3 +181,19 @@ async def update_user_role(
         "user_id": user_id,
         "new_role": role_data.role_name
     }
+
+
+@router.post("/jobs/run-daily-summaries", response_model=dict)
+async def trigger_daily_summaries(current_user: User = Depends(require_admin)):
+    """Manually trigger the daily summary job (admin only). Useful for testing."""
+    logger.info("Admin manually triggered daily_summary_job", admin_id=str(current_user.id))
+    await daily_summary_job()
+    return {"message": "daily_summary_job completed"}
+
+
+@router.post("/jobs/run-weekly-plan-refresh", response_model=dict)
+async def trigger_weekly_plan_refresh(current_user: User = Depends(require_admin)):
+    """Manually trigger the weekly plan refresh job (admin only). Useful for testing."""
+    logger.info("Admin manually triggered weekly_plan_refresh_job", admin_id=str(current_user.id))
+    await weekly_plan_refresh_job()
+    return {"message": "weekly_plan_refresh_job completed"}

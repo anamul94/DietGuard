@@ -132,6 +132,19 @@ REDIS_PASSWORD=myredissecret
 
 See `.env.example` for complete configuration options.
 
+### LLM / Agent Configuration
+
+Set `LLM_PROVIDER`/`LLM_MODEL` for globals and use `*_AGENT_LLM_PROVIDER` plus `*_AGENT_LLM_MODEL` for agent-specific overrides. The block in `backend/.env.example` keeps all overrides in one central spot (diet plan, summary, food, report, etc.) so a single `.env` edit is enough to switch an agent to Ollama or another provider. When you need prompt inspection, toggle `LLM_DEBUG_LOG_PROMPTS` or set `DIET_PLAN_AGENT_LLM_DEBUG_LOG_PROMPTS=true`.
+
+Example entries from `.env.example`:
+```bash
+LLM_PROVIDER=bedrock
+DIET_PLAN_AGENT_LLM_PROVIDER=ollama
+DIET_PLAN_AGENT_LLM_MODEL=glm-4.7-flash:latest
+REPORT_AGENT_LLM_PROVIDER=bedrock
+REPORT_AGENT_LLM_MODEL=apac.anthropic.claude-3-7-sonnet-20250219-v1:0
+```
+
 ## API Endpoints
 
 Canonical API prefix:

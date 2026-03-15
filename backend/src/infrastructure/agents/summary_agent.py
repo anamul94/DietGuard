@@ -1,7 +1,6 @@
 import asyncio
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
-from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_chat_model, get_chat_model_diagnostics
 
 
 async def summary_agent(nutrition_report: str) -> str:
@@ -11,16 +10,14 @@ async def summary_agent(nutrition_report: str) -> str:
     logger.info("Summary agent invoked")
     
     try:
-        config = get_bedrock_config()
-        llm = create_bedrock_chat_model()
+        diagnostics = get_chat_model_diagnostics(agent_name="summary_agent")
+        llm = create_chat_model(agent_name="summary_agent")
     except Exception as e:
         logger.error(
             "Summary agent LLM initialization failed",
             error=str(e),
             exception_type=type(e).__name__,
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            diagnostics=diagnostics if "diagnostics" in locals() else None,
         )
         return f"Model initialization failed: {str(e)}"
 
@@ -64,16 +61,12 @@ async def summary_agent(nutrition_report: str) -> str:
     }
 
     try:
-        # run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: llm.invoke([system_message, message])
         )
 
-        # Flush events to Langfuse
-        flush_langfuse()
-
         logger.info("Summary agent completed successfully")
-        return response.text() if hasattr(response, "text") else str(response)
+        return response.content if hasattr(response, "content") else str(response)
     except Exception as e:
         logger.error("Summary agent model invocation failed", error=str(e), exception_type=type(e).__name__)
         return f"Model invocation failed: {str(e)}"

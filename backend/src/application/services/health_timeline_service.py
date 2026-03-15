@@ -25,6 +25,7 @@ from ...infrastructure.database.health_models import (
 )
 from ...infrastructure.graphs.health_correlation_graph import summarize_health_period
 from ...infrastructure.utils.nutrition_utils import metric_value as _metric_value
+from .report_comparison_service import ReportComparisonService
 from .health_utils import (
     build_health_context_summary,
     build_structured_report,
@@ -39,7 +40,6 @@ from .health_utils import (
     parse_report_date,
     parse_vitals_csv,
 )
-
 
 class HealthTimelineService:
     @staticmethod
@@ -340,6 +340,26 @@ class HealthTimelineService:
             )
 
         await db.commit()
+        
+        worsening_info = await ReportComparisonService.evaluate_worsening(db, user_id)
+        plan_regeneration_triggered = False
+        try:
+            from .diet_plan_service import DietPlanService
+            from ...infrastructure.database.health_models import DietPlan
+            has_active_plan = await db.scalar(
+                select(DietPlan.id)
+                .where(DietPlan.user_id == user_id, DietPlan.is_active.is_(True))
+                .limit(1)
+            )
+            if not has_active_plan:
+                await DietPlanService.generate_diet_plan(db, user_id, trigger="initial")
+                plan_regeneration_triggered = True
+            elif worsening_info.get("worsening_detected"):
+                await DietPlanService.generate_diet_plan(db, user_id, trigger="worsening_detected")
+                plan_regeneration_triggered = True
+        except Exception:
+            pass
+
         return {
             "report_id": str(report.id),
             "version": report.version,
@@ -348,6 +368,9 @@ class HealthTimelineService:
             "report_category": primary_category,
             "category_scopes": category_meta["category_scopes"],
             "structured": structured,
+            "worsening_detected": worsening_info.get("worsening_detected", False),
+            "worsening_labs": worsening_info.get("worsening_labs", []),
+            "plan_regeneration_triggered": plan_regeneration_triggered,
         }
 
     @staticmethod
@@ -434,6 +457,11 @@ class HealthTimelineService:
                         "unit": lab.unit,
                         "current_date": lab.lab_date.isoformat() if lab.lab_date else None,
                         "previous_date": old_lab.lab_date.isoformat() if old_lab.lab_date else None,
+                        "trend_direction": ReportComparisonService.classify_trend(
+                            float(lab.value_numeric),
+                            float(old_lab.value_numeric),
+                            lab.canonical_name or lab.test_name
+                        )
                     }
                 )
 

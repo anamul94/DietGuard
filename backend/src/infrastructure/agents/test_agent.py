@@ -1,13 +1,13 @@
 import asyncio
 from ..utils.logger import logger
-from ..utils.bedrock_utils import create_bedrock_chat_model
+from ..utils.bedrock_utils import create_chat_model
 
 async def test_agent() -> str:
     """Simple test agent to check LLM connectivity"""
     logger.info("Test agent invoked")
     
     try:
-        llm = create_bedrock_chat_model()
+        llm = create_chat_model(agent_name="test_agent")
         
         message = {"role": "user", "content": "How are you?"}
         

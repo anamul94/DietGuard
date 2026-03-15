@@ -10,6 +10,7 @@ from ...infrastructure.auth.dependencies import get_current_active_user
 from ...application.services.auth_service import AuthService
 from ...application.services.subscription_service import SubscriptionService
 from ...application.services.audit_service import AuditService
+from ...application.services.health_utils import VALID_ACTIVITY_LEVELS
 from ...infrastructure.utils.logger import logger
 
 router = APIRouter(tags=["Users"])
@@ -225,8 +226,7 @@ async def update_profile(
         changes["nationality"] = update_data["nationality"]
 
     if "activityLevel" in update_data and update_data["activityLevel"] is not None:
-        allowed_activity_levels = {"sedentary", "light", "moderate", "active", "very_active"}
-        if update_data["activityLevel"] not in allowed_activity_levels:
+        if update_data["activityLevel"] not in VALID_ACTIVITY_LEVELS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid activityLevel. Use: sedentary, light, moderate, active, very_active",

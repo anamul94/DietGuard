@@ -3,13 +3,15 @@ Structured health timeline routes.
 """
 
 from datetime import date, datetime, time, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...application.services.health_timeline_service import HealthTimelineService, group_food_items_for_review, parse_vitals_csv
 from ...application.services.nutrition_target_service import NutritionTargetService
+from ...application.services.diet_plan_service import DietPlanService
 from ...application.services.patient_service import PatientService
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
@@ -33,6 +35,9 @@ from ..schemas.health_schemas import (
     VitalBatchCreate,
     VitalBatchResponse,
 )
+from ..schemas.diet_plan_schemas import DietPlanResponse, DietPlanMealSchema
+from ..schemas.daily_summary_schemas import DailySummaryCreate, DailySummaryResponse
+from ...application.services.daily_summary_service import DailySummaryService
 
 
 router = APIRouter(tags=["Health Timeline"])
@@ -143,20 +148,22 @@ async def confirm_meal(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.info("Meal confirmation requested", user_id=str(current_user.id), item_count=len(request.items))
-    calculator_input = []
-    for item in request.items:
-        description = item.name
-        if item.quantity:
-            description = f"{item.quantity} {description}"
-        if item.preparation:
-            description = f"{description} ({item.preparation})"
-        calculator_input.append(description)
-
-    agent_response = await nutrition_calculator_agent(calculator_input)
-    if not agent_response.success:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=agent_response.error_message)
-
+    logger.debug("Meal confirmation payload", user_id=str(current_user.id), payload=jsonable_encoder(request))
+    analysis_payload = request.food_analysis.model_dump()
+    item_payloads = [
+        {
+            "name": detail.name,
+            "quantity": detail.quantity,
+            "role": "main",
+            "preparation": detail.preparation,
+        }
+        for detail in request.food_analysis.fooditem_details
+    ]
+    logger.info(
+        "Meal confirmation requested",
+        user_id=str(current_user.id),
+        item_count=len(item_payloads),
+    )
     hour, minute = map(int, request.meal_time.split(":"))
     meal_event = await HealthTimelineService.create_meal_event(
         db=db,
@@ -164,11 +171,10 @@ async def confirm_meal(
         meal_type=request.meal_type,
         meal_date=request.meal_date,
         meal_time_value=time(hour=hour, minute=minute),
-        items=[item.model_dump() for item in request.items],
-        nutrition=agent_response.data["nutrition"],
-        fooditem_details=agent_response.data.get("fooditem_details", []),
-        source_filenames=request.source_filenames,
-        notes=request.notes,
+        items=item_payloads,
+        nutrition=analysis_payload.get("nutrition", {}),
+        fooditem_details=analysis_payload.get("fooditem_details", item_payloads),
+        source_filenames=[],
         source="confirmed_meal",
     )
 
@@ -177,8 +183,8 @@ async def confirm_meal(
         "meal_type": meal_event.meal_type,
         "meal_date": meal_event.meal_date.isoformat(),
         "meal_time": request.meal_time,
-        "food_analysis": agent_response.data,
-        "source_filenames": request.source_filenames,
+        "food_analysis": analysis_payload,
+        "source_filenames": [],
     }
 
 
@@ -372,3 +378,86 @@ async def get_monthly_insights(
         end_datetime=end_datetime,
         label="monthly",
     )
+
+
+@router.post("/diet-plan/generate", response_model=DietPlanResponse)
+async def generate_diet_plan(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        plan = await DietPlanService.generate_diet_plan(db, current_user.id, trigger="manual")
+        return plan
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/diet-plan/current", response_model=DietPlanResponse)
+async def get_current_diet_plan(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    plan = await DietPlanService.get_current_plan(db, current_user.id)
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active diet plan found")
+    return plan
+
+
+@router.get("/diet-plan/history", response_model=List[DietPlanResponse])
+async def get_diet_plan_history(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    history = await DietPlanService.get_plan_history(db, current_user.id)
+    return history
+
+
+@router.get("/diet-plan/today", response_model=List[DietPlanMealSchema])
+async def get_todays_diet_plan_meals(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    meals = await DietPlanService.get_todays_plan_meals(db, current_user.id)
+    return meals
+
+
+@router.post("/daily-summary/generate", response_model=DailySummaryResponse)
+async def generate_daily_summary(
+    request: DailySummaryCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        target_date = date.fromisoformat(request.summary_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="summary_date must be YYYY-MM-DD") from exc
+
+    summary = await DailySummaryService.generate_summary(db, current_user.id, target_date)
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough data to generate a summary for this date. Log meals or vitals first.",
+        )
+    return summary
+
+
+@router.get("/daily-summary", response_model=DailySummaryResponse)
+async def get_daily_summary(
+    target_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    target_date = target_date or date.today()
+    summary = await DailySummaryService.get_summary(db, current_user.id, target_date)
+    if not summary:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No summary found for this date")
+    return summary
+
+
+@router.get("/daily-summary/recent", response_model=List[DailySummaryResponse])
+async def get_recent_daily_summaries(
+    limit: int = Query(default=7, ge=1, le=30),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await DailySummaryService.get_recent_summaries(db, current_user.id, limit=limit)

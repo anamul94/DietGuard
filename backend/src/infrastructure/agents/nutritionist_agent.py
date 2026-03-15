@@ -1,7 +1,6 @@
 import asyncio
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
 from ..utils.logger import logger
-from ..utils.bedrock_utils import create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_chat_model, get_chat_model_diagnostics
 from ..utils.nutrition_utils import format_metric
 from .agent_response import AgentResponse
 
@@ -37,15 +36,13 @@ async def nutritionist_agent(
     logger.info("Nutritionist agent invoked", meal_type=meal_type, meal_time=meal_time, age=age, gender=gender, has_nutrition=bool(nutrition_values))
     
     try:
-        config = get_bedrock_config()
-        llm = create_bedrock_chat_model(temperature=0.1)
+        diagnostics = get_chat_model_diagnostics(agent_name="nutritionist_agent")
+        llm = create_chat_model(agent_name="nutritionist_agent", temperature=0.1)
     except Exception as e:
         logger.error(
             "Nutritionist agent LLM initialization failed",
             error=str(e),
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            diagnostics=diagnostics if "diagnostics" in locals() else None,
         )
         raise ValueError("Nutritionist service is temporarily unavailable. Please try again later.")
 
@@ -98,13 +95,9 @@ async def nutritionist_agent(
     }
 
     try:
-        # run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, user_message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: llm.invoke([system_message, user_message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
         
         # Extract metadata
         meta = response.response_metadata if hasattr(response, 'response_metadata') else {}
@@ -121,7 +114,7 @@ async def nutritionist_agent(
         }
         
         # Get response text
-        response_text = response.text() if hasattr(response, "text") else str(response)
+        response_text = response.content if hasattr(response, "content") else str(response)
         
         logger.info("Nutritionist agent completed successfully", 
                    meal_type=meal_type, 

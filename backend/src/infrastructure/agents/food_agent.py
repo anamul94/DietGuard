@@ -1,20 +1,19 @@
 import asyncio
 
-from ..utils.langfuse_utils import flush_langfuse, get_langfuse_handler
 from ..utils.logger import logger
-from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_llm, get_chat_model_diagnostics
 from ..utils.nutrition_utils import metric_value
 from .agent_response import AgentResponse
 from ...presentation.schemas.food_schemas import FoodAnalysis
 
 
-async def food_agent(data, type, mime_type, location=None):
+async def food_agent(data, content_type, mime_type, location=None):
     """
     Analyze food images and return structured nutritional data.
     
     Args:
         data: base64-encoded string OR list of base64 strings for multiple images
-        type: "image" OR list of "image" for multiple images
+        content_type: "image" OR list of "image" for multiple images
         mime_type: e.g. "image/jpeg" OR list of mime types for multiple images
         location: Optional user location (e.g., "Mumbai, India") for regional food context
         
@@ -25,8 +24,8 @@ async def food_agent(data, type, mime_type, location=None):
     logger.info("Food agent invoked", image_count=image_count)
     
     try:
-        config = get_bedrock_config()
-        llm = create_bedrock_chat_model(temperature=0.1)
+        diagnostics = get_chat_model_diagnostics(agent_name="food_agent")
+        llm = create_llm(agent_name="food_agent", temperature=0.1)
         # Apply structured output schema with raw response for metadata
         structured_llm = llm.with_structured_output(FoodAnalysis, include_raw=True)
     except Exception as e:
@@ -34,9 +33,7 @@ async def food_agent(data, type, mime_type, location=None):
             "Food agent LLM initialization failed",
             error=str(e),
             exception_type=type(e).__name__,
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            diagnostics=diagnostics if "diagnostics" in locals() else None,
         )
         return AgentResponse.error_response("Food analysis service is temporarily unavailable. Please try again later.")
 
@@ -83,7 +80,7 @@ async def food_agent(data, type, mime_type, location=None):
             "type": "text", 
             "text": "Identify and analyze all food items in these images. Provide per-item nutrition in fooditem_details and total meal nutrition in nutrition."
         }]
-        for i, (img_data, img_type, img_mime) in enumerate(zip(data, type, mime_type)):
+        for i, (img_data, img_type, img_mime) in enumerate(zip(data, content_type, mime_type)):
             content.append({
                 "type": img_type,
                 "source_type": "base64",
@@ -94,7 +91,7 @@ async def food_agent(data, type, mime_type, location=None):
         content = [
             {"type": "text", "text": "Identify and analyze all food items in this image. Provide per-item nutrition in fooditem_details and total meal nutrition in nutrition."},
             {
-                "type": type,
+                "type": content_type,
                 "source_type": "base64",
                 "mime_type": mime_type,
                 "data": data,
@@ -109,14 +106,8 @@ async def food_agent(data, type, mime_type, location=None):
     try:
         # Invoke with structured output (returns dict with 'parsed' and 'raw')
         result = await asyncio.to_thread(
-            lambda: structured_llm.invoke(
-                [system_message, message],
-                config={"callbacks": [get_langfuse_handler()]}
-            )
+            lambda: structured_llm.invoke([system_message, message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
         
         # Extract parsed data and metadata
         parsed: FoodAnalysis = result["parsed"]
@@ -149,6 +140,6 @@ async def food_agent(data, type, mime_type, location=None):
     except Exception as e:
         logger.error("Food agent model invocation failed", 
                     error=str(e), 
-                    exception_type=type(e).__name__, 
+                    exception_type=e.__class__.__name__, 
                     image_count=image_count)
         return AgentResponse.error_response("Unable to analyze food items at this time. Please try again later.")

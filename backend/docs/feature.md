@@ -218,3 +218,15 @@
 
   After Phase 2, the system has the full closed loop: reports influence plans → plans guide eating → meals are logged → vitals are tracked → correlation detects issues → daily summary
   explains what happened → new report confirms if it worked.
+
+
+                   Future feature                    │  Would use create_agent() + tools   │
+  ├─────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ Nutrition database lookup (USDA FoodData)           │ Yes — tool to query external DB     │
+  ├─────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ User can ask "what did I eat last Tuesday?"         │ Yes — tool to query meal history    │
+  ├─────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ Agent verifies lab values before plan generation    │ Yes — tool to query health records  │
+  ├─────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ Interactive meal swap ("replace chicken with tofu") │ Yes — tool to recalculate nutrition │
+  └─────────────────

@@ -1,4 +1,5 @@
 import time
+from contextlib import asynccontextmanager
 
 import socketio
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from ...infrastructure.database.database import AsyncSessionLocal
+from ...infrastructure.scheduler.scheduler import start_scheduler, stop_scheduler
 from ...infrastructure.utils.logger import logger
 from .admin_routes import router as admin_router
 from .ai_agent_routes import router as ai_agent_router
@@ -51,7 +53,16 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Scheduler is disabled for now; re-enable in a future release.
+    # start_scheduler()
+    yield
+    # stop_scheduler()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="DietGuard AI API",
     description="""AI-powered nutrition and health backend with structured meal, vitals, and report timelines.""",
     version="2.0.0",

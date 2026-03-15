@@ -1,8 +1,7 @@
 import asyncio
 
-from ..utils.langfuse_utils import flush_langfuse, get_langfuse_handler
 from ..utils.logger import logger
-from ..utils.bedrock_utils import create_bedrock_chat_model, get_bedrock_config, get_bedrock_diagnostics
+from ..utils.bedrock_utils import create_chat_model, get_chat_model_diagnostics
 from .agent_response import AgentResponse
 
 
@@ -15,29 +14,18 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
     logger.info("Report agent invoked", file_type=file_type, mime_type=mime_type)
     
     try:
-        config = get_bedrock_config()
-        bedrock_diag = get_bedrock_diagnostics()
+        model_diag = get_chat_model_diagnostics(agent_name="report_agent")
         logger.info(
-            "Report agent Bedrock runtime",
-            model_id=bedrock_diag["model_id"],
-            region_name=bedrock_diag["region_name"],
-            credential_source=bedrock_diag["credential_source"],
-            credential_type=bedrock_diag["credential_type"],
-            has_session_token=bedrock_diag["has_session_token"],
-            integration_path=bedrock_diag["integration_path"],
+            "Report agent model runtime",
+            **model_diag,
         )
-        llm = create_bedrock_chat_model()
+        llm = create_chat_model(agent_name="report_agent")
     except Exception as e:
         logger.error(
             "Report agent LLM initialization failed",
             error=str(e),
             exception_type=type(e).__name__,
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
-            model_id=bedrock_diag["model_id"] if "bedrock_diag" in locals() else None,
-            credential_source=bedrock_diag["credential_source"] if "bedrock_diag" in locals() else None,
-            integration_path=bedrock_diag["integration_path"] if "bedrock_diag" in locals() else None,
+            diagnostics=model_diag if "model_diag" in locals() else None,
         )
         return AgentResponse.error_response("Report extraction service is temporarily unavailable.")
 
@@ -121,14 +109,10 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
     }
 
     try:
-        # run blocking call in a thread-safe way with Langfuse tracing
         response = await asyncio.to_thread(
-            lambda: llm.invoke([system_message, message], config={"callbacks": [get_langfuse_handler()]})
+            lambda: llm.invoke([system_message, message])
         )
 
-        # Flush events to Langfuse
-        flush_langfuse()
-        
         # Extract metadata
         meta = response.response_metadata if hasattr(response, 'response_metadata') else {}
         usage = response.usage_metadata if hasattr(response, 'usage_metadata') else {}
@@ -144,9 +128,7 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
         }
         
         # Get response text
-        response_text = response.text() if hasattr(response, "text") else (
-            response.content if hasattr(response, "content") else str(response)
-        )
+        response_text = response.content if hasattr(response, "content") else str(response)
         
         logger.info("Report agent completed successfully", 
                    file_type=file_type, 

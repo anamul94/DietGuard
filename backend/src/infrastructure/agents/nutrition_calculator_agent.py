@@ -1,12 +1,42 @@
 import asyncio
 from pydantic import BaseModel, Field
-from typing import List
-from ..utils.langfuse_utils import get_langfuse_handler, flush_langfuse
+from typing import Any, Dict, List
 from ..utils.logger import logger
-from ..utils.bedrock_utils import DEFAULT_BEDROCK_MODEL, create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_chat_model, get_chat_model_diagnostics
 from ..utils.nutrition_utils import extract_food_item_names, metric_value
 from .agent_response import AgentResponse
 from ...presentation.schemas.food_schemas import FoodNutritionBreakdownItem, NutritionInfo
+
+
+def _aggregate_nutrition_from_items(items: List[Dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    metric_units = {
+        "calories": "kcal",
+        "protein": "g",
+        "carbohydrates": "g",
+        "fat": "g",
+        "fiber": "g",
+        "sugar": "g",
+    }
+    totals: dict[str, dict[str, Any]] = {
+        metric: {"value": 0.0, "unit": unit} for metric, unit in metric_units.items()
+    }
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        nutrition = item.get("nutrition") or {}
+        if not isinstance(nutrition, dict):
+            continue
+        for metric, unit in metric_units.items():
+            metric_entry = nutrition.get(metric)
+            if metric_entry is None:
+                continue
+            value = metric_value(metric_entry)
+            if value is None:
+                continue
+            totals[metric]["value"] += value
+
+    return totals
 
 
 class NutritionCalculation(BaseModel):
@@ -15,30 +45,33 @@ class NutritionCalculation(BaseModel):
         default_factory=list,
         description="Per-item nutrition breakdown for each food item"
     )
-    nutrition: NutritionInfo = Field(description="Total nutritional information for all food items combined")
+    nutrition: NutritionInfo | None = Field(
+        default=None,
+        description="Total nutritional information for all food items combined. Optional when agent does not provide totals."
+    )
 
 
 
-async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: dict = None):
+async def nutrition_calculator_agent(fooditems: List[str]):
     """
     Calculate clinically accurate nutrition values for given food items.
-    
+
+    Used for fresh nutrition calculation from confirmed food items (no reference data).
+    For recalculation with reference to old AI extraction, use nutrition_recalculator_agent instead.
+
     Args:
         fooditems: List of food item descriptions with quantities
                   (e.g., ["1 grilled chicken with naan roti", "2 slices pizza with cheese and tomato"])
-        old_food_analysis: Optional previous food analysis with nutrition values for reference
-                          to maintain calculation consistency (e.g., {"fooditems": [...], "nutrition": {...}})
-        
+
     Returns:
         AgentResponse with structured NutritionCalculation data
     """
     item_count = len(fooditems)
-    has_reference = old_food_analysis is not None
-    logger.info("Nutrition calculator agent invoked", item_count=item_count, has_reference=has_reference)
+    logger.info("Nutrition calculator agent invoked", item_count=item_count)
     
     try:
-        config = get_bedrock_config()
-        llm = create_bedrock_chat_model(temperature=0.1)
+        diagnostics = get_chat_model_diagnostics(agent_name="nutrition_calculator_agent")
+        llm = create_chat_model(agent_name="nutrition_calculator_agent", temperature=0.1)
         # Apply structured output schema with raw response for metadata
         structured_llm = llm.with_structured_output(NutritionCalculation, include_raw=True)
     except Exception as e:
@@ -46,13 +79,10 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
             "Nutrition calculator agent LLM initialization failed",
             error=str(e),
             exception_type=type(e).__name__,
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            diagnostics=diagnostics if "diagnostics" in locals() else None,
         )
         return AgentResponse.error_response("Nutrition calculation service is temporarily unavailable. Please try again later.")
 
-    # Build system message with optional reference context
     base_system_content = (
         "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist and registered dietitian with 15 years of experience. "
         "Your specialty is providing clinically accurate nutritional analysis based on USDA FoodData Central and international nutrition databases. "
@@ -71,20 +101,6 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
         "\n   Example: calories={\"value\": 450, \"unit\": \"kcal\"}, protein={\"value\": 35, \"unit\": \"g\"}"
     )
     
-    # Add reference context if old food analysis is provided
-    if old_food_analysis:
-        reference_context = (
-            "\n\n**REFERENCE DATA FOR CONSISTENCY:**"
-            "\nYou have been provided with a previous food analysis as reference. Use this to:"
-            "\n- Maintain consistent calculation methodology and standards"
-            "\n- Apply the same serving size assumptions and quantity interpretations"
-            "\n- Ensure consistency in how you calculate nutrition values"
-            "\n- The reference is for maintaining calculation consistency only"
-            "\n- You MUST recalculate ALL items in the new food list from scratch"
-            "\n- Even if some items appear similar, calculate fresh values for the new list"
-        )
-        base_system_content += reference_context
-    
     base_system_content += (
         "\n\nSTANDARD SERVING SIZES (when not specified):"
         "\n- Pizza slice: 100-120g"
@@ -92,7 +108,36 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
         "\n- Naan/roti: 80-100g"
         "\n- Rice (cooked): 150g"
         "\n- Salad: 100g"
-        "\n\nBe precise, objective, and clinically accurate in all calculations."
+        "\n\n**OUTPUT JSON STRUCTURE (REQUIRED):**"
+        "\nYou MUST output EXACTLY this JSON structure with all fields:"
+        "\n{"
+        "\n  \"fooditem_details\": ["
+        "\n    {"
+        "\n      \"name\": \"item name\","
+        "\n      \"quantity\": \"quantity with unit\","
+        "\n      \"preparation\": \"preparation method if mentioned\","
+        "\n      \"nutrition\": {"
+        "\n        \"calories\": {\"value\": number, \"unit\": \"kcal\"},"
+        "\n        \"protein\": {\"value\": number, \"unit\": \"g\"},"
+        "\n        \"carbohydrates\": {\"value\": number, \"unit\": \"g\"},"
+        "\n        \"fat\": {\"value\": number, \"unit\": \"g\"},"
+        "\n        \"fiber\": {\"value\": number, \"unit\": \"g\"},"
+        "\n        \"sugar\": {\"value\": number, \"unit\": \"g\"}"
+        "\n      }"
+        "\n    }"
+        "\n  ],"
+        "\n  \"nutrition\": {"
+        "\n    \"calories\": {\"value\": TOTAL_CALORIES, \"unit\": \"kcal\"},"
+        "\n    \"protein\": {\"value\": TOTAL_PROTEIN, \"unit\": \"g\"},"
+        "\n    \"carbohydrates\": {\"value\": TOTAL_CARBS, \"unit\": \"g\"},"
+        "\n    \"fat\": {\"value\": TOTAL_FAT, \"unit\": \"g\"},"
+        "\n    \"fiber\": {\"value\": TOTAL_FIBER, \"unit\": \"g\"},"
+        "\n    \"sugar\": {\"value\": TOTAL_SUGAR, \"unit\": \"g\"}"
+        "\n  }"
+        "\n}"
+        "\n\nIMPORTANT: Each item in 'fooditem_details' has its own 'nutrition' object."
+        "\nThe top-level 'nutrition' field is the SUM of all fooditem_details.nutrition values."
+        "\nBe precise, objective, and clinically accurate in all calculations."
     )
     
     system_message = {
@@ -102,26 +147,15 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
 
     # Format food items for the prompt
     fooditems_text = "\n".join([f"- {item}" for item in fooditems])
-    
-    # Build user message with optional reference data
-    user_content = f"Calculate the total nutritional values for these food items:\n\n{fooditems_text}\n\n"
-    
-    if old_food_analysis:
-        old_items = extract_food_item_names(old_food_analysis)
-        old_nutrition = old_food_analysis.get("nutrition", {})
-        
-        reference_text = (
-            "\n**REFERENCE - Previous Analysis:**\n"
-            f"Previous food items: {', '.join(old_items)}\n"
-            f"Previous nutrition values: {old_nutrition}\n\n"
-            "Use this reference to maintain consistent calculation methodology. "
-            "Recalculate ALL items in the new list above with the same standards.\n\n"
-        )
-        user_content += reference_text
-    
-    user_content += (
-        "Provide clinically accurate nutrition data based on standard serving sizes and the quantities mentioned. "
-        "Return both item-level nutrition in `fooditem_details` and total meal nutrition in `nutrition`."
+
+    user_content = (
+        f"Calculate the total nutritional values for these food items:\n\n{fooditems_text}\n\n"
+        "Provide clinically accurate nutrition data based on standard serving sizes and the quantities mentioned.\n\n"
+        "**REQUIRED OUTPUT:**\n"
+        "1. `fooditem_details` array: One entry per food item with its individual nutrition\n"
+        "2. `nutrition` object: The TOTAL/SUM of all individual nutrition values across all items\n\n"
+        "CRITICAL: You MUST include BOTH fields in your response. The top-level `nutrition` field is mandatory "
+        "and must be the sum of all items' nutrition values."
     )
     
     message = {
@@ -132,23 +166,89 @@ async def nutrition_calculator_agent(fooditems: List[str], old_food_analysis: di
     try:
         # Invoke with structured output (returns dict with 'parsed' and 'raw')
         result = await asyncio.to_thread(
-            lambda: structured_llm.invoke(
-                [system_message, message],
-                config={"callbacks": [get_langfuse_handler()]}
-            )
+            lambda: structured_llm.invoke([system_message, message])
         )
-        
-        # Flush events to Langfuse
-        flush_langfuse()
-        
-        # Extract parsed data and metadata
-        parsed: NutritionCalculation = result["parsed"]
-        raw = result["raw"]  # AIMessage with metadata
+
+        parsed: NutritionCalculation | None = result.get("parsed")
+        raw = result.get("raw")  # AIMessage with metadata
+        parsing_error = result.get("parsing_error")
+
+        # If LLM didn't include the top-level nutrition, calculate it from fooditem_details
+        if parsed is None and parsing_error and "nutrition" in str(parsing_error).lower():
+            logger.info("Attempting to calculate missing nutrition from fooditem_details")
+            # Try to extract just the fooditem_details and calculate nutrition ourselves
+            try:
+                import json
+                # Try to get the raw content - it might be in different formats
+                if hasattr(raw, "content"):
+                    raw_content = raw.content
+                elif hasattr(raw, "additional_kwargs") and "tool_calls" in raw.additional_kwargs:
+                    # Sometimes structured output is in tool_calls
+                    raw_content = raw.additional_kwargs.get("tool_calls", [{}])[0].get("function", {}).get("arguments", "{}")
+                else:
+                    raw_content = str(raw)
+
+                logger.info("Raw content type", content_type=type(raw_content).__name__)
+
+                # Parse the content
+                if isinstance(raw_content, str):
+                    partial_data = json.loads(raw_content)
+                elif isinstance(raw_content, dict):
+                    partial_data = raw_content
+                else:
+                    logger.warning("Unexpected raw content type, cannot calculate nutrition")
+                    partial_data = {}
+
+                if "fooditem_details" in partial_data and partial_data["fooditem_details"]:
+                    logger.info("Found fooditem_details, calculating totals", item_count=len(partial_data["fooditem_details"]))
+                    # Calculate total nutrition from items
+                    totals = {
+                        "calories": {"value": 0, "unit": "kcal"},
+                        "protein": {"value": 0, "unit": "g"},
+                        "carbohydrates": {"value": 0, "unit": "g"},
+                        "fat": {"value": 0, "unit": "g"},
+                        "fiber": {"value": 0, "unit": "g"},
+                        "sugar": {"value": 0, "unit": "g"},
+                    }
+                    for item in partial_data["fooditem_details"]:
+                        if "nutrition" in item:
+                            for key in totals:
+                                if key in item["nutrition"]:
+                                    totals[key]["value"] += item["nutrition"][key].get("value", 0)
+
+                    # Add the calculated nutrition and re-parse
+                    partial_data["nutrition"] = totals
+                    parsed = NutritionCalculation(**partial_data)
+                    logger.info("Successfully calculated missing top-level nutrition", total_calories=totals["calories"]["value"])
+                else:
+                    logger.warning("No fooditem_details found in partial data")
+            except Exception as calc_error:
+                logger.error("Failed to calculate missing nutrition", error=str(calc_error), exception_type=type(calc_error).__name__)
+
+        if parsed is None:
+            error_payload = {
+                "has_raw": raw is not None,
+                "result_keys": list(result.keys()),
+            }
+            if parsing_error:
+                error_payload["parsing_error"] = str(parsing_error)
+            logger.error(
+                "Nutrition calculator agent returned no structured output",
+                item_count=item_count,
+                llm_result_summary=error_payload,
+            )
+            return AgentResponse.error_response(
+                "Nutrition calculation failed: LangChain could not parse the model output."
+            )
         meta = raw.response_metadata if hasattr(raw, 'response_metadata') else {}
         usage = raw.usage_metadata if hasattr(raw, 'usage_metadata') else {}
 
         # Convert Pydantic model to dict for AgentResponse
         structured_data = parsed.model_dump()
+        if structured_data.get("nutrition") is None:
+            structured_data["nutrition"] = _aggregate_nutrition_from_items(
+                structured_data.get("fooditem_details", [])
+            )
         
         # Prepare metadata for token tracking
         metadata = {

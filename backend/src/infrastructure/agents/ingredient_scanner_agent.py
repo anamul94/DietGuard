@@ -1,6 +1,6 @@
 import asyncio
 from ..utils.logger import logger
-from ..utils.bedrock_utils import create_bedrock_chat_model, get_bedrock_config
+from ..utils.bedrock_utils import create_chat_model, get_chat_model_diagnostics
 from .agent_response import AgentResponse
 from ...presentation.schemas.ingredient_schemas import IngredientAnalysis
 
@@ -27,8 +27,9 @@ async def ingredient_scanner_agent(data, type, mime_type):
     logger.info("Ingredient scanner agent invoked")
     
     try:
-        config = get_bedrock_config()
-        llm = create_bedrock_chat_model(
+        diagnostics = get_chat_model_diagnostics(agent_name="ingredient_scanner_agent")
+        llm = create_chat_model(
+            agent_name="ingredient_scanner_agent",
             temperature=0.1,
         )
         # Apply structured output schema with raw response for metadata
@@ -38,9 +39,7 @@ async def ingredient_scanner_agent(data, type, mime_type):
             "Ingredient scanner agent LLM initialization failed",
             error=str(e),
             exception_type=type(e).__name__,
-            has_region=bool(config.get("region_name")) if "config" in locals() else False,
-            has_profile=bool(config.get("credentials_profile_name")) if "config" in locals() else False,
-            has_session_token=bool(config.get("aws_session_token")) if "config" in locals() else False,
+            diagnostics=diagnostics if "diagnostics" in locals() else None,
         )
         return AgentResponse.error_response("Ingredient analysis service is temporarily unavailable. Please try again later.")
 

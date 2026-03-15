@@ -37,6 +37,7 @@ from ...infrastructure.agents.report_agent import report_agent
 from ...infrastructure.agents.food_agent import food_agent
 from ...infrastructure.agents.nutritionist_agent import nutritionist_agent
 from ...infrastructure.agents.nutrition_calculator_agent import nutrition_calculator_agent
+from ...infrastructure.agents.nutrition_recalculator_agent import nutrition_recalculator_agent
 from ...infrastructure.agents.ingredient_scanner_agent import ingredient_scanner_agent
 
 
@@ -759,32 +760,32 @@ async def get_nutrition_advice(
 @router.post(
     "/calculate-nutrition",
     response_model=NutritionCalculationResponse,
-    summary="Calculate Nutrition from Food Items",
+    summary="Calculate Nutrition from Food Item Names",
     description="""
-    Calculate clinically accurate nutrition values for given food items.
-    
+    Calculate clinically accurate nutrition values from food item names (text input only).
+
     **Authentication Required:** Yes (JWT Bearer token)
-    
+
     **Use Case:**
-    This endpoint is designed for when users correct AI-identified foods from the `/upload-food` endpoint.
-    Users can provide corrected food item names with quantities to get updated nutrition values.
-    
+    Fresh nutrition calculation from text food item descriptions without image analysis.
+    This is useful when users manually enter food items or for quick nutrition lookups.
+
     **Input Format:**
-    - Provide food items with quantities (e.g., "1 grilled chicken with naan roti")
+    - Provide food item names with quantities (e.g., "1 grilled chicken breast", "150g rice")
     - The agent will parse quantities and calculate nutrition accordingly
     - If no quantity is specified, standard serving sizes are used
-    
+
     **Examples:**
-    - "1 grilled chicken with naan roti"
-    - "2 slices pizza with cheese and tomato"
-    - "150g brown rice with vegetables"
-    
+    - "1 grilled chicken breast"
+    - "2 slices whole wheat bread"
+    - "150g cooked brown rice"
+
     **Returns:**
     - food_analysis object containing:
-      - fooditem_details: Per-item nutrition values for each identified food item
-      - nutrition: Clinically accurate nutrition values
-    
-    **Note:** This endpoint tracks usage but does not count against daily limits.
+      - fooditem_details: Per-item nutrition values for each food item
+      - nutrition: Clinically accurate total nutrition values
+
+    **Note:** This endpoint does NOT save the meal. Use `/health/meals/confirm` to save.
     """,
     responses={
         200: {
@@ -803,32 +804,26 @@ async def calculate_nutrition(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Calculate nutrition values for given food items.
-    
+    Calculate nutrition values from food item names.
+
     Accepts food item names with quantities and returns clinically accurate nutrition data.
-    If `old_food_analysis` is provided, it is used as optional reference context.
+    This is a simple calculation without reference data (no old_food_analysis needed).
     """
     try:
-        logger.info(f"Nutrition calculation request from user {current_user.id}", 
-                   item_count=len(request.fooditems),
-                   has_old_analysis=request.old_food_analysis is not None)
-        
-        old_food_analysis = request.old_food_analysis
-        
-        # Call nutrition calculator agent with optional reference data
-        nutrition_response = await nutrition_calculator_agent(
-            request.fooditems, 
-            old_food_analysis=old_food_analysis
-        )
-        
+        logger.info(f"Nutrition calculation request from user {current_user.id}",
+                   item_count=len(request.fooditems))
+
+        # Call nutrition calculator agent (simple, fresh calculation)
+        nutrition_response = await nutrition_calculator_agent(fooditems=request.fooditems)
+
         # Check if agent failed
         if not nutrition_response.success:
             raise HTTPException(status_code=500, detail=nutrition_response.error_message)
-        
+
         # Extract nutrition data and metadata
         nutrition_data = nutrition_response.data
         metadata = nutrition_response.metadata if hasattr(nutrition_response, 'metadata') else {}
-        
+
         # Track token usage (but don't count against limits)
         if metadata:
             await TokenUsageService.track_token_usage(
@@ -843,8 +838,128 @@ async def calculate_nutrition(
                 cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
                 cache_read_tokens=metadata.get("cache_read_tokens", 0)
             )
-        
+
         logger.info(f"Nutrition calculation completed for user {current_user.id}")
+
+        return NutritionCalculationResponse(
+            food_analysis={
+                "fooditem_details": nutrition_data.get("fooditem_details", []),
+                "nutrition": nutrition_data.get("nutrition", {})
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Nutrition calculation error for user {current_user.id}",
+                    error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to calculate nutrition. Please try again later."
+        )
+
+
+@router.post(
+    "/recalculate-nutrition",
+    response_model=NutritionCalculationResponse,
+    summary="Recalculate Nutrition from Corrected Food Items",
+    description="""
+    Recalculate clinically accurate nutrition values when users correct AI-identified foods.
+
+    **Authentication Required:** Yes (JWT Bearer token)
+
+    **Use Case:**
+    After the AI extracts food items from images via `/draft-from-image`, users can correct the identified foods.
+    This endpoint recalculates nutrition values for the corrected food items with accurate macros and calories.
+
+    **Flow:**
+    1. User uploads meal images → `/draft-from-image` returns AI-extracted foods
+    2. User reviews and corrects food names/quantities in the UI
+    3. User calls this endpoint with corrected items → receives updated nutrition
+    4. User confirms meal → nutrition values are saved
+
+    **Input Format:**
+    - Provide corrected food item names with quantities (e.g., "1 grilled chicken with naan roti")
+    - The agent will parse quantities and calculate nutrition accordingly
+    - If no quantity is specified, standard serving sizes are used
+
+    **Examples:**
+    - "1 grilled chicken with naan roti"
+    - "2 slices pizza with cheese and tomato"
+    - "150g brown rice with vegetables"
+
+    **Returns:**
+    - food_analysis object containing:
+      - fooditem_details: Per-item nutrition values for each identified food item
+      - nutrition: Clinically accurate total nutrition values
+
+    **Note:** This endpoint tracks usage but does not count against daily limits.
+    """,
+    responses={
+        200: {
+            "description": "Successful nutrition recalculation",
+            "model": NutritionCalculationResponse
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing JWT token",
+            "model": ErrorResponse
+        }
+    }
+)
+async def recalculate_nutrition(
+    request: NutritionCalculationRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Recalculate nutrition values after user corrects AI-identified food items.
+
+    Accepts corrected food item names with quantities and returns updated clinically accurate nutrition data.
+    If `old_food_analysis` is provided (from the original AI extraction), it is used as reference context
+    to maintain calculation consistency.
+    """
+    try:
+        logger.info(f"Nutrition recalculation request from user {current_user.id}",
+                   item_count=len(request.fooditems),
+                   has_old_analysis=request.old_food_analysis is not None)
+
+        # Validate that old_food_analysis is provided (required for recalculation)
+        if not request.old_food_analysis:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="old_food_analysis is required for nutrition recalculation. Use this endpoint only for correcting AI-extracted foods."
+            )
+
+        # Call nutrition recalculator agent (specialized for correction flow)
+        nutrition_response = await nutrition_recalculator_agent(
+            corrected_fooditems=request.fooditems,
+            old_food_analysis=request.old_food_analysis
+        )
+
+        # Check if agent failed
+        if not nutrition_response.success:
+            raise HTTPException(status_code=500, detail=nutrition_response.error_message)
+
+        # Extract nutrition data and metadata
+        nutrition_data = nutrition_response.data
+        metadata = nutrition_response.metadata if hasattr(nutrition_response, 'metadata') else {}
+
+        # Track token usage (but don't count against limits)
+        if metadata:
+            await TokenUsageService.track_token_usage(
+                db=db,
+                user=current_user,
+                model_name=metadata.get("model_name", "unknown"),
+                agent_type="nutrition_recalculator_agent",
+                input_tokens=metadata.get("input_tokens", 0),
+                output_tokens=metadata.get("output_tokens", 0),
+                total_tokens=metadata.get("total_tokens", 0),
+                endpoint="/api/v1/ai/recalculate-nutrition",
+                cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
+                cache_read_tokens=metadata.get("cache_read_tokens", 0)
+            )
+
+        logger.info(f"Nutrition recalculation completed for user {current_user.id}")
         
         return NutritionCalculationResponse(
             food_analysis={
