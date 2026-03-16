@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
@@ -21,6 +22,21 @@ class DietPlanGenerationResult(BaseModel):
         default_factory=list, 
         description="List of meals for the 7-day plan, covering 0=Monday through 6=Sunday"
     )
+
+MAX_NOTES_WORDS = 140
+
+
+def _normalize_notes(text: str) -> str:
+    value = (text or "").strip()
+    if not value:
+        return value
+    value = re.sub(r"(?i)\\bthe user\\b", "you", value)
+    value = re.sub(r"\\s+", " ", value).strip()
+    words = value.split()
+    if len(words) > MAX_NOTES_WORDS:
+        value = " ".join(words[:MAX_NOTES_WORDS]).rstrip(" .") + "."
+    return value
+
 
 async def diet_plan_agent(context: Dict[str, Any]) -> AgentResponse:
     """
@@ -52,7 +68,8 @@ async def diet_plan_agent(context: Dict[str, Any]) -> AgentResponse:
         "2. Ensure the daily total calories across all meals closely matches the daily calorie_target.\n"
         "3. Provide realistic macro breakdowns per food item.\n"
         "4. Follow all safety guards rigidly.\n"
-        "5. Output must exactly match the required JSON schema with `notes` and `meals`."
+        "5. Notes must be concise (max ~140 words), friendly, and speak directly to the person using 'you'.\n"
+        "6. Output must exactly match the required JSON schema with `notes` and `meals`."
     )
 
     # Apply safety guards deterministic to prompt
@@ -96,6 +113,8 @@ async def diet_plan_agent(context: Dict[str, Any]) -> AgentResponse:
 
         parsed: DietPlanGenerationResult = result["parsed"]
         structured_data = parsed.model_dump()
+        if isinstance(structured_data.get("notes"), str):
+            structured_data["notes"] = _normalize_notes(structured_data["notes"])
 
         raw = result["raw"]
         meta = getattr(raw, 'response_metadata', {})

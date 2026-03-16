@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
@@ -10,6 +11,27 @@ from ..utils.logger import logger
 class DailySummaryResult(BaseModel):
     narrative: str = Field(description="2-3 sentences overview, 1 key insight, 1-2 actions for tomorrow")
     alerts: List[str] = Field(default_factory=list, description="Any critical alerts based on the data")
+
+MAX_NARRATIVE_WORDS = 90
+
+
+def _normalize_narrative(text: str) -> str:
+    value = (text or "").strip()
+    if not value:
+        return value
+
+    # Avoid third-person robotic phrasing.
+    value = re.sub(r"(?i)\\bthe user\\b", "you", value)
+    value = re.sub(r"(?i)\\byou are\\b", "you're", value)
+
+    # Collapse excessive whitespace.
+    value = re.sub(r"\\s+", " ", value).strip()
+
+    # Hard cap words to avoid long, generic narratives.
+    words = value.split()
+    if len(words) > MAX_NARRATIVE_WORDS:
+        value = " ".join(words[:MAX_NARRATIVE_WORDS]).rstrip(" .") + "."
+    return value
 
 
 async def daily_summary_agent(context: Dict[str, Any]) -> AgentResponse:
@@ -30,22 +52,33 @@ async def daily_summary_agent(context: Dict[str, Any]) -> AgentResponse:
         )
         return AgentResponse.error_response("Daily summary generation service is unavailable.")
 
-    # Convert context dict into a prompt-friendly string
+    # Convert context dict into a prompt-friendly string (keep it compact).
+    meals = context.get("meals", []) or []
+    vitals = context.get("vitals", []) or []
+    total_calories = 0
+    for meal in meals:
+        try:
+            total_calories += int(meal.get("calories") or 0)
+        except Exception:
+            continue
+
     stats_text = (
         f"Date: {context.get('target_date')}\n"
         f"Adherence Score: {context.get('adherence_score', 0)}/100\n"
-        f"Meals Logged: {len(context.get('meals', []))}\n"
-        f"Vitals Logged: {len(context.get('vitals', []))}\n"
+        f"Meals Logged: {len(meals)}\n"
+        f"Total Calories: {total_calories}\n"
+        f"Vitals Logged: {len(vitals)}\n"
         f"Conditions: {context.get('conditions_snapshot')}\n"
     )
 
     base_system_content = (
-        "You are Dr. Sarah Mitchell, acting as a warm, encouraging daily health coach. "
-        "Your task is to review the user's daily health stats and generate a short, non-clinical narrative summary.\n\n"
+        "You are a warm, concise daily health coach. "
+        "Your task is to summarize the user's day in a friendly, non-clinical way.\n\n"
         "RULES:\n"
-        "1. Write a day overview (2-3 sentences), 1 key insight, and tomorrow's focus (1-2 actions).\n"
-        "2. Keep the total length under 250 words.\n"
-        "3. Tone should be warm, encouraging, but objective about the data.\n"
+        "1. Output exactly 3 short sentences total: (a) overview, (b) 1 insight, (c) 1 next step.\n"
+        "2. Keep it under 90 words. No filler, no greetings, no disclaimers.\n"
+        "3. Speak directly to the person using 'you' (never 'the user').\n"
+        "4. If data is missing, acknowledge it briefly and suggest what to log next.\n"
         "4. Output must match the JSON schema exactly."
     )
     
@@ -68,6 +101,8 @@ async def daily_summary_agent(context: Dict[str, Any]) -> AgentResponse:
         
         parsed: DailySummaryResult = result["parsed"]
         structured_data = parsed.model_dump()
+        if isinstance(structured_data.get("narrative"), str):
+            structured_data["narrative"] = _normalize_narrative(structured_data["narrative"])
         
         raw = result["raw"]
         meta = getattr(raw, 'response_metadata', {})

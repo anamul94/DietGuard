@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import List, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -36,6 +37,22 @@ class MoodCheckInAnalysisResult(BaseModel):
         return text
 
 
+def _normalize_user_friendly_summary(summary: str) -> str:
+    # Make the summary feel like it's speaking to the person, not about them.
+    text = (summary or "").strip()
+    if not text:
+        return text
+
+    # Common robotic phrasing from models.
+    text = re.sub(r"(?i)\\bthe user\\b", "you", text)
+    text = re.sub(r"(?i)^user\\b", "You", text)
+    text = re.sub(r"(?i)^you\\s+are\\b", "You're", text)
+
+    # Capitalize first character.
+    text = text[:1].upper() + text[1:]
+    return text
+
+
 async def mood_checkin_agent(transcribed_text: str) -> AgentResponse:
     logger.info("Mood check-in agent invoked")
 
@@ -62,7 +79,7 @@ async def mood_checkin_agent(transcribed_text: str) -> AgentResponse:
             "- stress_level is an integer from 0 to 100.\n"
             "- key_stress_indicators is a list of short phrases quoted or inferred from the text.\n"
             "- urgency_level is low/medium/high based on how acute the situation sounds.\n"
-            "- summary is one sentence, plain, no medical claims.\n"
+            "- summary is one sentence addressed directly to the person (use 'you', not 'the user'), polite and empathetic, no medical claims.\n"
         ),
     }
 
@@ -85,9 +102,12 @@ async def mood_checkin_agent(transcribed_text: str) -> AgentResponse:
             "total_tokens": usage.get("total_tokens", 0),
         }
 
+        payload = parsed.model_dump()
+        if isinstance(payload.get("summary"), str):
+            payload["summary"] = _normalize_user_friendly_summary(payload["summary"])
+
         logger.info("Mood check-in agent completed successfully")
-        return AgentResponse.success_response(parsed.model_dump(), metadata=metadata)
+        return AgentResponse.success_response(payload, metadata=metadata)
     except Exception as e:
         logger.error("Mood check-in agent invocation failed", error=str(e))
         return AgentResponse.error_response("Unable to analyze mood at this time.")
-

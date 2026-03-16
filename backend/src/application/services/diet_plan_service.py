@@ -150,7 +150,8 @@ class DietPlanService:
         plan = DietPlan(
             user_id=user_id,
             valid_from=today,
-            valid_until=today + timedelta(days=7),
+            # 7-day plan inclusive of valid_from (today .. today+6)
+            valid_until=today + timedelta(days=6),
             generated_by="diet_plan_agent_v1",
             trigger=trigger,
             calorie_target=calorie_target,
