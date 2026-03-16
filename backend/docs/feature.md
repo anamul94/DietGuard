@@ -194,10 +194,39 @@
   What to build:
 
   New routes in health_routes.py:
-  - POST /api/v1/health/mood — create mood check-in (text input for now, audio later)
+  - POST /api/v1/health/mood/checkin — create mood check-in (audio upload)
   - GET /api/v1/health/mood/history — paginated history
 
-  Fields for Phase 1 (text-only): mood_label, energy_level (1–5), stress_level (1–5), sleep_quality (1–5), optional notes.
+  Phase 1 (audio):
+  - Mobile uploads an audio recording (multipart/form-data) with `consent=true`
+  - Mobile can optionally send `user_local_time` (ISO datetime with offset) to improve time-of-day accuracy
+  - Backend uploads audio to private S3, runs AWS Transcribe, then runs an LLM on the transcript
+  - Audio is deleted from S3 immediately after transcription (privacy)
+  - Security note: S3 bucket must block public access and allow `transcribe.amazonaws.com` read access to the uploaded object prefix only.
+
+  LLM outputs to return to mobile:
+  1. Primary emotion (one word)
+  2. Secondary emotions (list)
+  3. Stress level (0-100)
+  4. Key stress indicators found (list)
+  5. Urgency level (low/medium/high)
+  6. One sentence summary
+
+  Storage model:
+  - Keep `mood_checkins.stress_level` as 1-5 to avoid changing existing correlation heuristics.
+  - Store 0-100 as `symptom_flags.stress_score_0_100` and store the other extracted fields in `symptom_flags`.
+
+  Future (not implemented yet): Crisis Detection
+  - LLM can detect concerning patterns (self-harm, hopelessness, isolation, crisis language).
+  - When in doubt, flag as concerning.
+  - Planned response format:
+    {
+      "crisis_detected": true/false,
+      "severity": "none/low/medium/high/critical",
+      "concerning_phrases": [],
+      "recommended_action": "",
+      "show_resources": true/false
+    }
 
   Mood data already flows into get_period_insights() — it's collected and fed to the correlation graph. Just needs the write side.
 

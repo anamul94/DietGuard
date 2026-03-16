@@ -235,7 +235,7 @@ class MoodCheckIn(Base):
     energy_level = Column(Integer, nullable=True)
     stress_level = Column(Integer, nullable=True)
     sleep_quality = Column(Integer, nullable=True)
-    symptom_flags = Column(JSONB, nullable=False, default=list)
+    symptom_flags = Column(JSONB, nullable=False, default=dict)
     captured_at = Column(DateTime(timezone=True), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -340,4 +340,3 @@ class DailySummary(Base):
     __table_args__ = (
         Index("idx_daily_summaries_user_date", "user_id", "summary_date"),
     )
-

@@ -26,6 +26,7 @@ AGENT_NAMES = (
     "daily_summary_agent",
     "food_agent",
     "ingredient_scanner_agent",
+    "mood_checkin_agent",
     "nutrition_calculator_agent",
     "nutritionist_agent",
     "report_agent",

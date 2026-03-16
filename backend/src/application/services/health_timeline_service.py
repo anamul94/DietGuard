@@ -752,6 +752,82 @@ class HealthTimelineService:
         return total_reports
 
     @staticmethod
+    async def create_mood_checkin(
+        *,
+        db: AsyncSession,
+        user_id: Any,
+        audio_filename: Optional[str],
+        transcript: str,
+        mood_label: Optional[str],
+        stress_level_1_5: Optional[int],
+        symptom_flags: Dict[str, Any],
+        captured_at: datetime,
+        source: str = "audio",
+    ) -> MoodCheckIn:
+        checkin = MoodCheckIn(
+            user_id=user_id,
+            source=source,
+            audio_filename=audio_filename,
+            transcript=transcript,
+            mood_label=mood_label,
+            stress_level=stress_level_1_5,
+            symptom_flags=symptom_flags or {},
+            captured_at=captured_at,
+        )
+        db.add(checkin)
+        await db.commit()
+        await db.refresh(checkin)
+        return checkin
+
+    @staticmethod
+    async def get_mood_history(
+        *,
+        db: AsyncSession,
+        user_id: Any,
+        start_date: Optional[date],
+        end_date: Optional[date],
+        page: int,
+        page_size: int,
+    ) -> Dict[str, Any]:
+        # Date filtering is inclusive, using UTC day boundaries.
+        start_dt = (
+            datetime.combine(start_date, time.min).replace(tzinfo=timezone.utc)
+            if start_date
+            else datetime(1970, 1, 1, tzinfo=timezone.utc)
+        )
+        end_dt = (
+            datetime.combine(end_date, time.max).replace(tzinfo=timezone.utc)
+            if end_date
+            else datetime(2100, 1, 1, tzinfo=timezone.utc)
+        )
+
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(MoodCheckIn)
+            .where(MoodCheckIn.user_id == user_id, MoodCheckIn.captured_at >= start_dt, MoodCheckIn.captured_at <= end_dt)
+        )
+        total_count = int(count_result.scalar() or 0)
+
+        offset = (page - 1) * page_size
+        result = await db.execute(
+            select(MoodCheckIn)
+            .where(MoodCheckIn.user_id == user_id, MoodCheckIn.captured_at >= start_dt, MoodCheckIn.captured_at <= end_dt)
+            .order_by(MoodCheckIn.captured_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        rows = result.scalars().all()
+        total_pages = (total_count + page_size - 1) // page_size if page_size else 0
+
+        return {
+            "items": rows,
+            "total_count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
+
+    @staticmethod
     async def get_period_insights(
         db: AsyncSession,
         user_id: Any,

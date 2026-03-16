@@ -158,6 +158,26 @@ Content-Type: multipart/form-data
 files=@report.pdf
 ```
 
+## Mood Check-ins (Protected)
+
+### Create Mood Check-in (Audio)
+```bash
+POST /api/v1/health/mood/checkin
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+audio=@checkin.m4a
+consent=true
+captured_at=2026-03-16T11:42:14Z
+user_local_time=2026-03-16T17:12:14+05:30
+```
+
+### Mood Check-in History
+```bash
+GET /api/v1/health/mood/history?page=1&page_size=10
+Authorization: Bearer <token>
+```
+
 ## Trial Lifecycle
 
 ### Day 1-7 (Trial Active)

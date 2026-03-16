@@ -1161,20 +1161,37 @@ Request → 401
 
 ## 13. Phase 2 Preview — Mood Check-ins
 
-This feature is **not built yet** — it is planned for Phase 2.
-The database model exists (`mood_checkins` table). When implemented, it will add:
+This feature is available.
 
-**POST** `/health/mood/checkin`
-- Audio recording upload
-- Backend transcribes audio and scores mood, energy, stress, sleep quality
-- Scores feed into daily summary and insights
+**POST** `/health/mood/checkin` (multipart/form-data)
+- Fields:
+  - `audio`: required file (`.m4a/.mp4/.mp3/.wav`)
+  - `consent`: required boolean, must be `true`
+  - `captured_at`: optional ISO datetime (if omitted, server uses current UTC time)
+  - `user_local_time`: optional ISO datetime with offset from the device (recommended for best time-of-day accuracy)
+- Response includes:
+  - `mood_checkin_id`
+  - `user_id`
+  - `session_id`
+  - `transcript`
+  - `captured_at` (UTC)
+  - `analyzed_at` (UTC)
+  - `user_local_time`
+  - `time_of_day` (`morning|afternoon|evening|night`)
+  - `day_of_week`
+  - `primary_emotion` (one word)
+  - `secondary_emotions` (list)
+  - `stress_level` (0-100)
+  - `key_stress_indicators` (list)
+  - `urgency_level` (`low|medium|high`)
+  - `summary` (one sentence)
 
 **GET** `/health/mood/history`
-- Returns recent mood check-ins with trends
+- Returns recent mood check-ins (paginated) including transcript and extracted fields.
 
 **Integration note for mobile:** Plan for a daily check-in prompt, ideally at night before
-the daily summary is generated (around 8:30 PM). The summary will incorporate mood data
-when this feature ships.
+the daily summary is generated (around 8:30 PM). The daily summary and insights can
+incorporate mood data once check-ins exist.
 
 ---
 
@@ -1221,3 +1238,5 @@ when this feature ships.
 | POST | `/health/daily-summary/generate` | Yes | Generate daily summary |
 | GET | `/health/daily-summary` | Yes | Get summary for a date |
 | GET | `/health/daily-summary/recent` | Yes | Last N daily summaries |
+| POST | `/health/mood/checkin` | Yes | Audio mood check-in (transcribe + mood/stress analysis) |
+| GET | `/health/mood/history` | Yes | Paginated mood check-in history |

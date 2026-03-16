@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "DietGuard Mood Check-ins: private S3 bucket for temporary audio uploads used by AWS Transcribe."
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: "Name for the S3 bucket that will temporarily store mood check-in audio."
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    ConstraintDescription: "3-63 chars, lowercase letters/numbers/dot/hyphen; must start/end with letter/number."
+  Prefix:
+    Type: String
+    Default: "mood-checkins/"
+    Description: "S3 key prefix for uploaded mood check-in audio. Must end with '/'."
+  ExpireAfterDays:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 30
+    Description: "Defense-in-depth: automatically expire objects under Prefix after N days."
+  BackendRoleArn:
+    Type: String
+    Default: ""
+    Description: "Optional: IAM role ARN used by backend to Put/Delete objects under Prefix."
+
+Conditions:
+  HasBackendRoleArn: !Not [!Equals [!Ref BackendRoleArn, ""]]
+
+Resources:
+  MoodCheckinsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireMoodCheckinAudio
+            Status: Enabled
+            Prefix: !Ref Prefix
+            ExpirationInDays: !Ref ExpireAfterDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  MoodCheckinsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MoodCheckinsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Require TLS for all bucket access.
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${BucketName}"
+              - !Sub "arn:aws:s3:::${BucketName}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": false
+
+          # Allow AWS Transcribe to read objects under Prefix.
+          # Transcribe still runs under your account; restrict by SourceAccount and SourceArn.
+          - Sid: AllowTranscribeReadPrefix
+            Effect: Allow
+            Principal:
+              Service: transcribe.amazonaws.com
+            Action:
+              - "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${BucketName}/${Prefix}*"
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:aws:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/*"
+
+          # Optional: allow the backend role to write/delete under Prefix.
+          - !If
+            - HasBackendRoleArn
+            - Sid: AllowBackendPutDeletePrefix
+              Effect: Allow
+              Principal:
+                AWS: !Ref BackendRoleArn
+              Action:
+                - "s3:PutObject"
+                - "s3:DeleteObject"
+                - "s3:AbortMultipartUpload"
+              Resource: !Sub "arn:aws:s3:::${BucketName}/${Prefix}*"
+            - !Ref "AWS::NoValue"
+
+Outputs:
+  MoodCheckinsBucketName:
+    Description: "Set this as TRANSCRIBE_S3_BUCKET in backend/.env"
+    Value: !Ref MoodCheckinsBucket
+  MoodCheckinsPrefix:
+    Description: "Set this as TRANSCRIBE_S3_PREFIX in backend/.env"
+    Value: !Ref Prefix
