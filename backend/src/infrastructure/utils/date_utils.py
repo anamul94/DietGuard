@@ -29,13 +29,12 @@ def calculate_age(date_of_birth: Optional[datetime]) -> Optional[int]:
     return age
 
 
-def validate_date_of_birth(date_of_birth: datetime, min_age: int = 13) -> bool:
+def validate_date_of_birth(date_of_birth: datetime) -> bool:
     """
-    Validate that date of birth is valid and user meets minimum age requirement.
+    Validate that date of birth is valid (not in the future).
     
     Args:
         date_of_birth: Date of birth to validate
-        min_age: Minimum age requirement (default: 13)
         
     Returns:
         True if valid, False otherwise
@@ -45,11 +44,6 @@ def validate_date_of_birth(date_of_birth: datetime, min_age: int = 13) -> bool:
     
     # Check if date is in the future
     if date_of_birth > datetime.now(timezone.utc):
-        return False
-    
-    # Check minimum age
-    age = calculate_age(date_of_birth)
-    if age is None or age < min_age:
         return False
     
     return True

@@ -11,7 +11,6 @@ from ...application.services.auth_service import AuthService
 from ...application.services.audit_service import AuditService
 from ...infrastructure.auth.jwt import verify_token, create_access_token, get_current_user
 from ...infrastructure.utils.logger import logger
-from ...infrastructure.utils.date_utils import validate_date_of_birth
 
 router = APIRouter(tags=["Authentication"])
 
@@ -37,12 +36,7 @@ class SignUpRequest(BaseModel):
     timezone: Optional[str] = Field("UTC", min_length=1, max_length=50, description="IANA timezone")
     date_of_birth: Optional[datetime] = Field(None, description="Date of birth in ISO format (age will be calculated)")
     
-    @field_validator('date_of_birth')
-    @classmethod
-    def validate_dob(cls, v):
-        if v and not validate_date_of_birth(v, min_age=13):
-            raise ValueError('Invalid date of birth. User must be at least 13 years old.')
-        return v
+
 
 class SignInRequest(BaseModel):
     email: EmailStr
