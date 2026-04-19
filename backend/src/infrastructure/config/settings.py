@@ -19,6 +19,7 @@ class Settings:
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
     # Security
+    ADMIN_KEY: str = os.getenv("ADMIN_KEY", "your_secure_admin_api_key_here")
     PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_HOURS", "1"))
     RATE_LIMIT_LOGIN_ATTEMPTS: int = int(os.getenv("RATE_LIMIT_LOGIN_ATTEMPTS", "5"))
     RATE_LIMIT_LOGIN_WINDOW_MINUTES: int = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_MINUTES", "15"))

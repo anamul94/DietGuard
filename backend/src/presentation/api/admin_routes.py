@@ -10,6 +10,7 @@ from ...infrastructure.database.auth_models import User, AuditLog, Role, UserRol
 from ...infrastructure.auth.dependencies import require_admin
 from ...infrastructure.scheduler.jobs import daily_summary_job, weekly_plan_refresh_job
 from ...infrastructure.utils.logger import logger
+from ...application.services.token_usage_service import TokenUsageService
 
 router = APIRouter(tags=["Admin"])
 
@@ -17,8 +18,6 @@ router = APIRouter(tags=["Admin"])
 class UserListItem(BaseModel):
     id: str
     email: str
-    firstName: str
-    lastName: str
     isActive: bool
     createdAt: str
     roles: List[str]
@@ -71,8 +70,6 @@ async def list_users(
         user_list.append({
             "id": str(user.id),
             "email": user.email,
-            "firstName": user.first_name,
-            "lastName": user.last_name,
             "isActive": user.is_active,
             "createdAt": user.created_at.isoformat(),
             "roles": roles
@@ -197,3 +194,79 @@ async def trigger_weekly_plan_refresh(current_user: User = Depends(require_admin
     logger.info("Admin manually triggered weekly_plan_refresh_job", admin_id=str(current_user.id))
     await weekly_plan_refresh_job()
     return {"message": "weekly_plan_refresh_job completed"}
+
+@router.get("/token-stats/daily", response_model=list)
+async def get_daily_token_stats(
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get daily token usage statistics (admin only).
+    
+    - **days**: Number of days to look back (default 30)
+    
+    Requires admin role.
+    """
+    stats = await TokenUsageService.get_daily_token_stats(db, days=days)
+    logger.info("Admin viewed daily token stats", admin_id=str(current_user.id), days=days)
+    return stats
+
+@router.get("/token-stats/models", response_model=list)
+async def get_model_token_stats(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get token usage statistics per model (admin only).
+    
+    Requires admin role.
+    """
+    stats = await TokenUsageService.get_model_token_stats(db)
+    logger.info("Admin viewed model token stats", admin_id=str(current_user.id))
+    return stats
+
+@router.get("/token-stats/top-consumers", response_model=list)
+async def get_top_token_consumers(
+    limit: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get users who consume the most tokens (admin only).
+    
+    - **limit**: Maximum number of users to return (default 10)
+    
+    Requires admin role.
+    """
+    stats = await TokenUsageService.get_top_token_consumers(db, limit=limit)
+    logger.info("Admin viewed top token consumers", admin_id=str(current_user.id), limit=limit)
+    return stats
+
+@router.get("/users/{user_id}/token-stats", response_model=dict)
+async def get_user_token_stats(
+    user_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get token statistics for a specific user (admin only).
+    
+    - **user_id**: The user's ID
+    
+    Requires admin role.
+    """
+    # Verify user exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+        
+    stats = await TokenUsageService.get_user_token_stats(db, user_id=user_id)
+    logger.info("Admin viewed user token stats", admin_id=str(current_user.id), target_user_id=user_id)
+    return stats
+

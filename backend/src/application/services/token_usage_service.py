@@ -203,3 +203,59 @@ class TokenUsageService:
             }
             for row in rows
         ]
+
+    @staticmethod
+    async def get_top_token_consumers(
+        db: AsyncSession,
+        limit: int = 10,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get users who consume the most tokens.
+        
+        Args:
+            db: Database session
+            limit: Maximum number of users to return
+            start_date: Start date for filtering (optional)
+            end_date: End date for filtering (optional)
+            
+        Returns:
+            List of top consumer statistics
+        """
+        query = select(
+            User.id,
+            User.email,
+            func.sum(TokenUsage.input_tokens).label('total_input'),
+            func.sum(TokenUsage.output_tokens).label('total_output'),
+            func.sum(TokenUsage.total_tokens).label('total_tokens'),
+            func.count(TokenUsage.id).label('api_calls')
+        ).join(
+            TokenUsage, User.id == TokenUsage.user_id
+        )
+        
+        if start_date:
+            query = query.where(func.date(TokenUsage.created_at) >= start_date)
+        if end_date:
+            query = query.where(func.date(TokenUsage.created_at) <= end_date)
+            
+        query = query.group_by(
+            User.id, User.email
+        ).order_by(
+            func.sum(TokenUsage.total_tokens).desc()
+        ).limit(limit)
+        
+        result = await db.execute(query)
+        rows = result.all()
+        
+        return [
+            {
+                "user_id": str(row.id),
+                "email": row.email,
+                "total_input_tokens": row.total_input or 0,
+                "total_output_tokens": row.total_output or 0,
+                "total_tokens": row.total_tokens or 0,
+                "api_calls": row.api_calls or 0
+            }
+            for row in rows
+        ]

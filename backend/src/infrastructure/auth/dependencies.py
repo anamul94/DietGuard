@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional, List
@@ -137,5 +137,27 @@ def require_role(required_roles: List[str]):
     return role_checker
 
 # Common role dependencies
-require_admin = require_role(["admin"])
 require_user = require_role(["user", "admin"])
+
+admin_api_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=True)
+
+async def require_admin(
+    api_key: str = Depends(admin_api_key_header)
+) -> User:
+    """
+    Dependency to require an Admin API key.
+    Returns a mock User object to satisfy existing route signatures.
+    """
+    from ..config.settings import settings
+    if api_key != settings.ADMIN_KEY:
+        logger.warning("Invalid Admin API Key attempt")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Admin API Key"
+        )
+    # Return a mock user so existing code doesn't break
+    mock_admin = User(
+        id="00000000-0000-0000-0000-000000000000",
+        email="admin@system.local"
+    )
+    return mock_admin
