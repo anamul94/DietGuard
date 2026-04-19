@@ -51,6 +51,9 @@ class DietPlanService:
             "weight_kg": float(persona.weight_kg) if persona and persona.weight_kg else None,
             "height_cm": float(persona.height_cm) if persona and persona.height_cm else None,
             "activity_level": persona.activity_level if persona else "sedentary",
+            "birth_place": persona.birth_place if persona else None,
+            "nationality": persona.nationality if persona else None,
+            "current_location": persona.current_location if persona else None,
             "diabetes_status": snapshot.get("diabetes_status", "unknown"),
             "hypertension_status": snapshot.get("hypertension_status", "unknown"),
             "kidney_disease_stage": snapshot.get("kidney_disease_stage"),
@@ -73,7 +76,6 @@ class DietPlanService:
                 "fat_g": current_target.get("fat_g", 0),
                 "fiber_g": current_target.get("fiber_g", 0),
             },
-            "location": persona.current_location if persona else None,
         }
 
     @staticmethod
