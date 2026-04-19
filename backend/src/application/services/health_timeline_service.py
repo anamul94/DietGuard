@@ -4,10 +4,12 @@ Services for structured health timeline persistence and summaries.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -624,25 +626,129 @@ class HealthTimelineService:
         source: str,
         source_device: Optional[str] = None,
     ) -> List[VitalEvent]:
-        created = []
-        for entry in entries:
-            vital = VitalEvent(
-                user_id=user_id,
-                source=source,
-                source_device=source_device or entry.get("source_device"),
-                vital_type=entry["vital_type"],
-                value_primary=entry["value_primary"],
-                value_secondary=entry.get("value_secondary"),
-                unit=entry["unit"],
-                notes=entry.get("notes"),
-                extra_metadata=entry.get("metadata") or {},
-                captured_at=entry["captured_at"],
-            )
-            db.add(vital)
-            created.append(vital)
+        if not entries:
+            return []
 
-        await db.commit()
-        return created
+        values_to_insert = []
+        for entry in entries:
+            # Create a deterministic UUID based on user_id, vital_type, and captured_at
+            # This ensures that syncing the exact same reading multiple times yields the same ID
+            unique_str = f"{user_id}_{entry['vital_type']}_{entry['captured_at'].isoformat()}"
+            deterministic_id = uuid.uuid5(uuid.NAMESPACE_OID, unique_str)
+            
+            values_to_insert.append({
+                "id": deterministic_id,
+                "user_id": user_id,
+                "source": source,
+                "source_device": source_device or entry.get("source_device"),
+                "vital_type": entry["vital_type"],
+                "value_primary": entry["value_primary"],
+                "value_secondary": entry.get("value_secondary"),
+                "unit": entry["unit"],
+                "notes": entry.get("notes"),
+                "extra_metadata": entry.get("metadata") or {},
+                "captured_at": entry["captured_at"],
+            })
+
+        stmt = insert(VitalEvent).values(values_to_insert).on_conflict_do_nothing().returning(VitalEvent)
+        result = await db.execute(stmt)
+        created = result.scalars().all()
+        
+        if created:
+            await db.commit()
+            
+        return list(created)
+
+    @staticmethod
+    async def get_daily_vitals(
+        db: AsyncSession,
+        user_id: Any,
+        target_date: date,
+    ) -> List[Dict[str, Any]]:
+        start_dt = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
+        end_dt = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
+
+        vitals_result = await db.execute(
+            select(VitalEvent)
+            .where(VitalEvent.user_id == user_id, VitalEvent.captured_at >= start_dt, VitalEvent.captured_at <= end_dt)
+            .order_by(VitalEvent.captured_at.asc())
+        )
+        vitals = vitals_result.scalars().all()
+
+        return [
+            {
+                "vital_id": str(vital.id),
+                "vital_type": vital.vital_type,
+                "value_primary": float(vital.value_primary),
+                "value_secondary": float(vital.value_secondary) if vital.value_secondary is not None else None,
+                "unit": vital.unit,
+                "captured_at": vital.captured_at,
+                "source": vital.source,
+                "source_device": vital.source_device,
+                "notes": vital.notes,
+                "metadata": vital.extra_metadata,
+            }
+            for vital in vitals
+        ]
+
+    @staticmethod
+    async def get_vital_history(
+        db: AsyncSession,
+        user_id: Any,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> Dict[str, Any]:
+        filters = [VitalEvent.user_id == user_id]
+        if start_date:
+            start_dt = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+            filters.append(VitalEvent.captured_at >= start_dt)
+        if end_date:
+            end_dt = datetime.combine(end_date, time.max, tzinfo=timezone.utc)
+            filters.append(VitalEvent.captured_at <= end_dt)
+
+        total_count_result = await db.execute(
+            select(func.count())
+            .select_from(VitalEvent)
+            .where(*filters)
+        )
+        total_count = total_count_result.scalar() or 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+        offset = (page - 1) * page_size
+
+        vitals_result = await db.execute(
+            select(VitalEvent)
+            .where(*filters)
+            .order_by(VitalEvent.captured_at.desc(), VitalEvent.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        vitals = vitals_result.scalars().all()
+
+        history_items = [
+            {
+                "vital_id": str(vital.id),
+                "vital_type": vital.vital_type,
+                "value_primary": float(vital.value_primary),
+                "value_secondary": float(vital.value_secondary) if vital.value_secondary is not None else None,
+                "unit": vital.unit,
+                "captured_at": vital.captured_at,
+                "source": vital.source,
+                "source_device": vital.source_device,
+                "notes": vital.notes,
+                "metadata": vital.extra_metadata,
+            }
+            for vital in vitals
+        ]
+
+        return {
+            "items": history_items,
+            "total_count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
 
     @staticmethod
     async def get_todays_meal_nutrition_summary(

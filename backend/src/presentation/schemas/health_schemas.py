@@ -254,6 +254,27 @@ class VitalBatchResponse(BaseModel):
     entries: List[VitalEntryResponse]
 
 
+class VitalHistoryItemResponse(BaseModel):
+    vital_id: str
+    vital_type: str
+    value_primary: float
+    value_secondary: Optional[float] = None
+    unit: str
+    captured_at: datetime
+    source: str
+    source_device: Optional[str] = None
+    notes: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PaginatedVitalHistoryResponse(BaseModel):
+    items: List[VitalHistoryItemResponse]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 class CorrelationInsightResponse(BaseModel):
     meal_id: str
     vital_id: str

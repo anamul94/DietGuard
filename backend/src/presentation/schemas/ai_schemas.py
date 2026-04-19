@@ -20,7 +20,7 @@ class FoodUploadRequest(BaseModel):
     )
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "meal_type": "lunch"
             }
@@ -66,7 +66,7 @@ This meal is high in calories, saturated fat, and sodium. Consider:
     )
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "meal_type": "lunch",
                 "files_processed": 2,
@@ -116,7 +116,7 @@ class ReportUploadResponse(BaseModel):
     )
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "files_processed": 2,
                 "filenames": ["blood_test.pdf", "cholesterol_report.pdf"],
@@ -148,7 +148,7 @@ class NutritionAdviceRequest(BaseModel):
     )
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "query": "What should I eat for breakfast to lose weight?",
                 "context": "I'm 30 years old, weight 80kg, and want to lose 5kg"
@@ -210,7 +210,7 @@ class NutritionAdviceResponse(BaseModel):
     )
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "advice": "## Breakfast for Weight Loss\n\nFocus on protein-rich foods like eggs, Greek yogurt, and lean meats. Include complex carbs like oatmeal and whole grain toast. Add healthy fats from avocado or nuts.",
                 "recommendations": [
@@ -228,7 +228,7 @@ class ErrorResponse(BaseModel):
     detail: str = Field(..., description="Error message", example="Invalid meal type. Must be one of: breakfast, lunch, dinner, snack")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "detail": "Authentication required. Please provide a valid JWT token."
             }
@@ -244,7 +244,7 @@ class SubscriptionLimitError(BaseModel):
     reset_time: Optional[datetime] = Field(None, description="When the limit resets")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "detail": "Daily upload limit reached. Upgrade your subscription for more uploads.",
                 "limit_type": "daily_upload_limit",

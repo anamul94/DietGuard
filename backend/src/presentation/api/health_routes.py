@@ -46,6 +46,8 @@ from ..schemas.health_schemas import (
     TodayMealNutritionSummaryResponse,
     VitalBatchCreate,
     VitalBatchResponse,
+    VitalHistoryItemResponse,
+    PaginatedVitalHistoryResponse,
 )
 from ..schemas.diet_plan_schemas import DietPlanResponse, DietPlanMealSchema
 from ..schemas.daily_summary_schemas import DailySummaryCreate, DailySummaryResponse
@@ -410,6 +412,42 @@ async def sync_device_vitals(
             for entry in created
         ],
     }
+
+
+@router.get("/vitals/daily", response_model=List[VitalHistoryItemResponse])
+async def get_daily_vitals(
+    target_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    target_date = target_date or date.today()
+    return await HealthTimelineService.get_daily_vitals(
+        db=db,
+        user_id=current_user.id,
+        target_date=target_date,
+    )
+
+
+@router.get("/vitals/history", response_model=PaginatedVitalHistoryResponse)
+async def get_vital_history(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date cannot be after end_date")
+
+    return await HealthTimelineService.get_vital_history(
+        db=db,
+        user_id=current_user.id,
+        start_date=start_date,
+        end_date=end_date,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(
