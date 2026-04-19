@@ -19,20 +19,16 @@ from .nutrition_target_service import NutritionTargetService
 class DailySummaryService:
     @staticmethod
     async def _build_generation_context(db: AsyncSession, user_id: Any, target_date: date) -> Dict[str, Any]:
-        # 1. Meals
         meals_result = await db.execute(
             select(MealEvent)
             .where(MealEvent.user_id == user_id, MealEvent.meal_date == target_date)
         )
         meals = meals_result.scalars().all()
         
-        # 2. Nutrition Target and Adherence
         try:
             adherence_response = await NutritionTargetService.get_adherence_for_date(db, user_id, target_date)
-            # Calculate a simple 0-100 adherence score based on calories
             cal_percent = adherence_response.get("adherence", {}).get("calories_kcal", {}).get("percent", 0)
             if cal_percent is not None:
-                # 100% adherence = 100 score. If they are over, subtract the diff.
                 diff = abs(100 - cal_percent)
                 adherence_score = max(0, 100 - int(diff))
             else:
@@ -41,14 +37,12 @@ class DailySummaryService:
             adherence_response = {}
             adherence_score = 0
             
-        # 3. Vitals
         vitals_result = await db.execute(
             select(VitalEvent).where(VitalEvent.user_id == user_id)
         )
         all_vitals = vitals_result.scalars().all()
         day_vitals = [v for v in all_vitals if v.captured_at.date() == target_date]
 
-        # 4. Conditions
         snapshot_result = await db.execute(
             select(MedicalConditionSnapshot)
             .where(
@@ -59,21 +53,40 @@ class DailySummaryService:
         snapshots = snapshot_result.scalars().all()
         conditions_snapshot = HealthTimelineService._merge_current_snapshots(snapshots)
 
+        total_protein = sum(float(m.total_protein_g or 0) for m in meals)
+        total_carbs = sum(float(m.total_carbohydrates_g or 0) for m in meals)
+        total_fat = sum(float(m.total_fat_g or 0) for m in meals)
+        total_fiber = sum(float(m.total_fiber_g or 0) for m in meals)
+        total_sugar = sum(float(m.total_sugar_g or 0) for m in meals)
+
         return {
             "target_date": target_date.isoformat(),
             "meals": [
                 {
                     "type": m.meal_type,
                     "calories": m.total_calories,
-                    "protein": m.total_protein_g,
-                    "time": m.meal_time.isoformat()
+                    "protein_g": float(m.total_protein_g) if m.total_protein_g else 0,
+                    "carbs_g": float(m.total_carbohydrates_g) if m.total_carbohydrates_g else 0,
+                    "fat_g": float(m.total_fat_g) if m.total_fat_g else 0,
+                    "time": m.meal_time.strftime("%H:%M") if m.meal_time else None,
+                    "items": m.items if hasattr(m, 'items') else [],
                 } for m in meals
             ],
+            "nutrition_totals": {
+                "calories": sum(m.total_calories for m in meals),
+                "protein_g": round(total_protein, 1),
+                "carbs_g": round(total_carbs, 1),
+                "fat_g": round(total_fat, 1),
+                "fiber_g": round(total_fiber, 1),
+                "sugar_g": round(total_sugar, 1),
+            },
             "vitals": [
                 {
                     "type": v.vital_type,
-                    "primary": v.value_primary,
+                    "value_primary": float(v.value_primary) if v.value_primary else None,
+                    "value_secondary": float(v.value_secondary) if v.value_secondary else None,
                     "unit": v.unit,
+                    "time": v.captured_at.strftime("%H:%M") if v.captured_at else None,
                 } for v in day_vitals
             ],
             "adherence_score": adherence_score,
