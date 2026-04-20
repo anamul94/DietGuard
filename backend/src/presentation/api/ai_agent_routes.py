@@ -425,6 +425,7 @@ async def upload_report(
         total_input_tokens = 0
         total_output_tokens = 0
         total_tokens = 0
+        model_name = None
         
         for file in files:
             # Validate file type
@@ -467,6 +468,8 @@ async def upload_report(
                 total_input_tokens += agent_response.metadata.get("input_tokens", 0)
                 total_output_tokens += agent_response.metadata.get("output_tokens", 0)
                 total_tokens += agent_response.metadata.get("total_tokens", 0)
+                if not model_name:
+                    model_name = agent_response.metadata.get("model_name", "claude-sonnet-4.6")
             
             # Parse JSON output from report_agent (EHR format)
             analysis_dict = parse_llm_json_payload(analysis)
@@ -523,7 +526,7 @@ async def upload_report(
         await TokenUsageService.track_token_usage(
             db=db,
             user=current_user,
-            model_name="claude-sonnet-4.6",
+            model_name=model_name or "claude-sonnet-4.6",
             agent_type="report_agent",
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,

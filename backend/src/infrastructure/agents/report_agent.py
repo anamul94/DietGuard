@@ -10,8 +10,26 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
     data: base64-encoded string of the file/image
     file_type: "image" | "file" | "audio" | "text"
     mime_type: e.g. "image/jpeg" or "application/pdf"
+    
+    This agent ONLY handles medical reports (lab reports, prescriptions, discharge summaries,
+    consultation notes, radiology reports). Non-medical images will be rejected.
     """
     logger.info("Report agent invoked", file_type=file_type, mime_type=mime_type)
+    
+    # Validate file type - only accept images and PDFs
+    if file_type not in ("image", "file"):
+        return AgentResponse.error_response(
+            "This service only accepts image files (JPEG, PNG) or PDF documents. "
+            "Please upload a medical report document."
+        )
+    
+    # Validate MIME type
+    allowed_mime_types = ("image/jpeg", "image/png", "image/webp", "application/pdf")
+    if mime_type not in allowed_mime_types:
+        return AgentResponse.error_response(
+            f"Unsupported file type: {mime_type}. "
+            "Please upload a medical report as JPEG, PNG, WebP, or PDF."
+        )
     
     try:
         model_diag = get_chat_model_diagnostics(agent_name="report_agent")
@@ -34,8 +52,29 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
         "content": (
             "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are a medical data extraction specialist. "
-            "Your ONLY task is to extract information that is explicitly present in the medical report. "
-            "Do not assume the report type in advance. The user may upload any medical document: lab report, prescription, discharge summary, consultation note, radiology report, or unknown type. "
+            "Your ONLY task is to extract information from MEDICAL REPORTS. "
+            "This agent is DESIGNED ONLY for medical documents: lab reports, prescriptions, discharge summaries, consultation notes, radiology reports, medical certificates, and similar healthcare documents.\n\n"
+            "REJECTION RULES - If the uploaded image is NOT a medical report, return this exact JSON:\n"
+            '{"error": true, "message": "This does not appear to be a medical report. Please upload a medical document such as a lab report, prescription, discharge summary, or radiology report."}\n\n'
+            "DO NOT analyze food images, food packaging, ingredient lists, nutrition labels, or any non-medical content. "
+            "If the image shows food, meals, restaurant dishes, grocery items, or anything similar, reject it with the error JSON above.\n\n"
+            "ACCEPTED DOCUMENT TYPES:\n"
+            "- Lab reports (blood tests, urine tests, pathology reports)\n"
+            "- Prescriptions and medication lists\n"
+            "- Discharge summaries\n"
+            "- Consultation notes\n"
+            "- Radiology reports (X-ray, MRI, CT scan reports)\n"
+            "- Medical certificates\n"
+            "- Vaccination records\n"
+            "- Hospital bills/insurance claims (medical context)\n\n"
+            "REJECTED CONTENT (return error JSON):\n"
+            "- Food images, meals, restaurant dishes\n"
+            "- Food packaging, ingredient labels, nutrition facts\n"
+            "- Receipts, shopping lists\n"
+            "- Non-medical documents\n\n"
+            "If you are unsure whether it's a medical report, lean towards rejecting it.\n\n"
+            "For accepted medical reports, extract information that is explicitly present in the document. "
+            "Do not assume the report type in advance. "
             "DO NOT add medical interpretations, insights, recommendations, or assessments that are not in the document. "
             "DO NOT infer normal or abnormal ranges unless they are written in the document. "
             "DO NOT provide medical advice or clinical opinions.\n\n"

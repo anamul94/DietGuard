@@ -14,6 +14,7 @@ from ...infrastructure.agents.daily_summary_agent import daily_summary_agent
 from ...infrastructure.database.health_models import DailySummary, MealEvent, MedicalConditionSnapshot, VitalEvent
 from .health_timeline_service import HealthTimelineService
 from .nutrition_target_service import NutritionTargetService
+from .token_usage_service import TokenUsageService
 
 
 class DailySummaryService:
@@ -115,6 +116,26 @@ class DailySummaryService:
             raise ValueError(agent_response.error_message)
             
         summary_data = agent_response.data
+        
+        # Track token usage
+        metadata = agent_response.metadata if hasattr(agent_response, 'metadata') else {}
+        if metadata:
+            from ...infrastructure.database.auth_models import User
+            user_result = await db.execute(select(User).where(User.id == user_id))
+            user = user_result.scalars().first()
+            if user:
+                await TokenUsageService.track_token_usage(
+                    db=db,
+                    user=user,
+                    model_name=metadata.get("model_name", "unknown"),
+                    agent_type="daily_summary_agent",
+                    input_tokens=metadata.get("input_tokens", 0),
+                    output_tokens=metadata.get("output_tokens", 0),
+                    total_tokens=metadata.get("total_tokens", 0),
+                    endpoint="/api/v1/health/daily-summary",
+                    cache_creation_tokens=metadata.get("cache_creation_tokens", 0),
+                    cache_read_tokens=metadata.get("cache_read_tokens", 0)
+                )
         
         # Save to database
         row = DailySummary(
