@@ -4,15 +4,34 @@ from typing import Dict, List
 from fastapi import UploadFile, HTTPException
 from PIL import Image
 
+MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+MAX_DIMENSION = 1920  # Max dimension (width or height) while maintaining quality
+
 
 def encode_image_to_base64(image_file: UploadFile) -> Dict[str, str]:
-    """Convert uploaded image to base64 string"""
+    """Convert uploaded image to base64 string
+    
+    If image is larger than 5MB, it will be compressed while maintaining quality
+    """
     try:
         # Read the image file
         image_bytes = image_file.file.read()
+        file_size = len(image_bytes)
         
         # Validate it's an image
         img = Image.open(io.BytesIO(image_bytes))
+        
+        # Compress if file size > 5MB
+        if file_size > MAX_FILE_SIZE_BYTES:
+            # Resize while maintaining aspect ratio
+            img = _compress_image(img)
+            
+            # Re-encode to bytes with high quality
+            img_byte_arr = io.BytesIO()
+            save_format = img.format.upper() if img.format and img.format.lower() in ['jpeg', 'jpg', 'png', 'webp'] else 'JPEG'
+            img.save(img_byte_arr, format=save_format, quality=90, optimize=True)
+            img_byte_arr.seek(0)
+            image_bytes = img_byte_arr.getvalue()
         
         # Convert to base64
         base64_string = base64.b64encode(image_bytes).decode('utf-8')
@@ -23,11 +42,40 @@ def encode_image_to_base64(image_file: UploadFile) -> Dict[str, str]:
         
         return {
             "mime_type": mime_type,
-            "base64_string": base64_string
+            "base64_string": base64_string,
+            "original_size": file_size,
+            "compressed_size": len(image_bytes) if file_size > MAX_FILE_SIZE_BYTES else None
         }
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
+
+
+def _compress_image(img: Image.Image) -> Image.Image:
+    """Compress image by resizing while maintaining quality
+    
+    Uses Lanczos resampling for high-quality downscaling
+    Maintains aspect ratio
+    """
+    # Get current dimensions
+    width, height = img.size
+    
+    # Check if resizing is needed
+    if width <= MAX_DIMENSION and height <= MAX_DIMENSION:
+        return img
+    
+    # Calculate new dimensions maintaining aspect ratio
+    if width > height:
+        new_width = MAX_DIMENSION
+        new_height = int((height / width) * MAX_DIMENSION)
+    else:
+        new_height = MAX_DIMENSION
+        new_width = int((width / height) * MAX_DIMENSION)
+    
+    # Resize with high-quality resampling (Lanczos)
+    resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
+    return resized_img
 
 
 def encode_pdf_to_base64(pdf_file: UploadFile) -> Dict[str, str]:
