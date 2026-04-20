@@ -246,14 +246,16 @@ async def update_user_package(
     
     # Determine subscription duration
     from datetime import timedelta
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
     if package_data.duration_days:
-        end_date = datetime.utcnow() + timedelta(days=package_data.duration_days)
+        end_date = now + timedelta(days=package_data.duration_days)
     elif package.billing_period == "free":
         end_date = None  # Free subscription has no end date
     elif package.billing_period == "monthly":
-        end_date = datetime.utcnow() + timedelta(days=30)
+        end_date = now + timedelta(days=30)
     elif package.billing_period == "yearly":
-        end_date = datetime.utcnow() + timedelta(days=365)
+        end_date = now + timedelta(days=365)
     else:
         end_date = None
     
@@ -269,7 +271,8 @@ async def update_user_package(
         existing_sub.package_id = package.id
         existing_sub.plan_type = "free" if package.price == 0 else "paid"
         existing_sub.end_date = end_date
-        existing_sub.updated_at = datetime.utcnow()
+        existing_sub.start_date = now  # Reset start date to now
+        existing_sub.updated_at = now
     else:
         # Create new subscription
         new_sub = Subscription(
@@ -277,7 +280,7 @@ async def update_user_package(
             package_id=package.id,
             plan_type="free" if package.price == 0 else "paid",
             status="active",
-            start_date=datetime.utcnow(),
+            start_date=now,
             end_date=end_date
         )
         db.add(new_sub)
@@ -295,11 +298,14 @@ async def update_user_package(
     return {
         "message": f"User package updated to '{package.name}'",
         "user_id": user_id,
+        "plan_type": "free" if package.price == 0 else "paid",
         "package": {
             "id": str(package.id),
             "name": package.name,
             "price": float(package.price),
             "billing_period": package.billing_period,
+            "daily_upload_limit": package.daily_upload_limit,
+            "daily_nutrition_limit": package.daily_nutrition_limit,
             "end_date": end_date.isoformat() if end_date else None
         }
     }

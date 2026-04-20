@@ -32,14 +32,32 @@ class SubscriptionService:
         )
         subscription = result.scalar_one_or_none()
         
-        # Check if paid trial has expired
+        # Check if paid subscription has expired
         if subscription and subscription.plan_type == "paid" and subscription.end_date:
             if subscription.end_date < datetime.now(timezone.utc):
-                # Trial expired, convert to free tier
-                subscription.plan_type = "free"
-                subscription.end_date = None
-                await db.commit()
-                logger.info("Trial expired, converted to free tier", user_id=str(user_id))
+                # Check if this is an admin-assigned package with end_date in the past
+                # If so, extend it automatically for 30 days
+                if subscription.package_id:
+                    pkg_result = await db.execute(select(Package).where(Package.id == subscription.package_id))
+                    pkg = pkg_result.scalar_one_or_none()
+                    if pkg and pkg.price > 0:
+                        # Admin-assigned paid package - extend by 30 days
+                        from datetime import timedelta
+                        subscription.end_date = datetime.now(timezone.utc) + timedelta(days=30)
+                        await db.commit()
+                        logger.info("Admin package expired, extended by 30 days", user_id=str(user_id))
+                    else:
+                        # Trial expired, convert to free tier
+                        subscription.plan_type = "free"
+                        subscription.end_date = None
+                        await db.commit()
+                        logger.info("Trial expired, converted to free tier", user_id=str(user_id))
+                else:
+                    # No package_id - old trial, convert to free
+                    subscription.plan_type = "free"
+                    subscription.end_date = None
+                    await db.commit()
+                    logger.info("Trial expired, converted to free tier", user_id=str(user_id))
         
         return subscription
     

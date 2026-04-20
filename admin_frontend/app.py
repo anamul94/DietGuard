@@ -298,7 +298,7 @@ with tab4:
                             "price": edit_price,
                             "billing_period": edit_billing_period,
                             "daily_upload_limit": edit_daily_upload,
-                            "daily_nutrition_limit": edit_daily_nutrition_limit,
+                            "daily_nutrition_limit": edit_daily_nutrition,
                             "features": edit_features,
                             "is_active": edit_active
                         }
