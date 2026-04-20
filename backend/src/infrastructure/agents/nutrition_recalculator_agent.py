@@ -63,6 +63,7 @@ async def nutrition_recalculator_agent(
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist. "
             "Your task is to recalculate nutrition values when users correct AI-identified food items.\n\n"
             "**CONTEXT:**\n"

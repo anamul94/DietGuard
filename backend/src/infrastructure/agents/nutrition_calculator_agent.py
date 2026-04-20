@@ -84,6 +84,7 @@ async def nutrition_calculator_agent(fooditems: List[str]):
         return AgentResponse.error_response("Nutrition calculation service is temporarily unavailable. Please try again later.")
 
     base_system_content = (
+        "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
         "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist and registered dietitian with 15 years of experience. "
         "Your specialty is providing clinically accurate nutritional analysis based on USDA FoodData Central and international nutrition databases. "
         "\n\nYOUR TASK:"

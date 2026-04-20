@@ -46,6 +46,7 @@ async def report_merge_agent(
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are a medical data integration specialist responsible for merging medical reports. "
             "Your task is to create a comprehensive Electronic Health Record (EHR) by intelligently merging "
             "old and new medical reports.\n\n"

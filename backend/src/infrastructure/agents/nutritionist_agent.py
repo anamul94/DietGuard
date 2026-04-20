@@ -50,6 +50,7 @@ async def nutritionist_agent(
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are Dr. Sarah Mitchell, a certified nutritionist and dietitian with 15 years of experience. "
             "Your role is to provide personalized, evidence-based nutritional advice focused on the food consumed. "
             "Analyze the meal and provide actionable recommendations. If user profile data (age, weight, height) "

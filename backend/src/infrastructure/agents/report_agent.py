@@ -32,6 +32,7 @@ async def report_agent(data: str, file_type: str, mime_type: str) -> AgentRespon
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are a medical data extraction specialist. "
             "Your ONLY task is to extract information that is explicitly present in the medical report. "
             "Do not assume the report type in advance. The user may upload any medical document: lab report, prescription, discharge summary, consultation note, radiology report, or unknown type. "

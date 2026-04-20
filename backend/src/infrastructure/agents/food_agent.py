@@ -49,6 +49,7 @@ async def food_agent(data, content_type, mime_type, location=None):
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are Dr. James Rodriguez, a certified nutritionist and food analyst. "
             "Your task is to professionally identify and analyze ALL food items in images with detailed descriptions. "
             f"{location_context}"

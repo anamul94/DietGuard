@@ -135,6 +135,7 @@ async def daily_summary_agent(context: Dict[str, Any]) -> AgentResponse:
     )
 
     base_system_content = (
+        "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
         "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist reviewing a patient's daily health data. "
         "Your task is to provide a professional, clinically-relevant daily summary.\n\n"
         "ANALYSIS GUIDELINES:\n"

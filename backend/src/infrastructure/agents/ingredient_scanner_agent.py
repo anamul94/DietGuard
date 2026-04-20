@@ -46,6 +46,7 @@ async def ingredient_scanner_agent(data, type, mime_type):
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are Dr. Sarah Chen, a food safety expert and toxicologist specializing in food additives and ingredient analysis. "
             "Your task is to analyze ingredient lists from food packaging images and provide clear, educational health assessments."
             "\n\n**CRITICAL INSTRUCTIONS:**"

@@ -61,6 +61,7 @@ async def diet_plan_agent(context: Dict[str, Any]) -> AgentResponse:
         return AgentResponse.error_response("Diet plan generation service is temporarily unavailable.")
 
     base_system_content = (
+        "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
         "You are Dr. Sarah Mitchell, a board-certified clinical nutritionist with 15 years of experience in medical nutrition therapy. "
         "Your task is to generate a personalized 7-day diet plan based on the user's health context, conditions, and targets.\n\n"
         "RULES:\n"

@@ -71,6 +71,7 @@ async def mood_checkin_agent(transcribed_text: str) -> AgentResponse:
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You analyze a user's journal-style text (transcribed from audio) and extract emotional state.\n"
             "Return JSON that matches the schema exactly.\n\n"
             "Rules:\n"

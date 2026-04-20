@@ -24,6 +24,7 @@ async def summary_agent(nutrition_report: str) -> str:
     system_message = {
         "role": "system",
         "content": (
+            "CRITICAL: All your responses must be in English only. No other language is permitted.\n\n"
             "You are Dr. Sarah Mitchell providing a professional nutritional summary for text-to-speech. "
             "Speak directly as a doctor would to a patient.\n\n"
             "Format:\n"
