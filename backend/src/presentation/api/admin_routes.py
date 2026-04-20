@@ -6,7 +6,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from ...infrastructure.database.database import get_db
-from ...infrastructure.database.auth_models import User, AuditLog, Role, UserRole
+from ...infrastructure.database.auth_models import User, AuditLog, Role, UserRole, Subscription, Package
 from ...infrastructure.auth.dependencies import require_admin
 from ...infrastructure.scheduler.jobs import daily_summary_job, weekly_plan_refresh_job
 from ...infrastructure.utils.logger import logger
@@ -32,6 +32,28 @@ class AuditLogItem(BaseModel):
 
 class UpdateRoleRequest(BaseModel):
     role_name: str
+
+class UpdateUserPackageRequest(BaseModel):
+    package_id: str
+    duration_days: Optional[int] = None  # Optional: custom duration in days
+
+class CreatePackageRequest(BaseModel):
+    name: str
+    price: float
+    billing_period: str  # 'free', 'monthly', 'yearly'
+    daily_upload_limit: int
+    daily_nutrition_limit: int
+    features: dict = {}
+    is_active: bool = True
+
+class UpdatePackageRequest(BaseModel):
+    name: Optional[str] = None
+    price: Optional[float] = None
+    billing_period: Optional[str] = None
+    daily_upload_limit: Optional[int] = None
+    daily_nutrition_limit: Optional[int] = None
+    features: Optional[dict] = None
+    is_active: Optional[bool] = None
 
 @router.get("/users", response_model=list)
 async def list_users(
@@ -177,6 +199,423 @@ async def update_user_role(
         "message": f"User role updated to '{role_data.role_name}'",
         "user_id": user_id,
         "new_role": role_data.role_name
+    }
+
+
+@router.put("/users/{user_id}/package", response_model=dict)
+async def update_user_package(
+    user_id: str,
+    package_data: UpdateUserPackageRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update user's subscription package (admin only).
+    
+    - **user_id**: User ID to update
+    - **package_id**: UUID of the package to assign
+    - **duration_days**: Optional custom duration in days (defaults to package billing period)
+    
+    Requires admin role.
+    """
+    # Get user
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get package
+    result = await db.execute(select(Package).where(Package.id == package_data.package_id))
+    package = result.scalar_one_or_none()
+    
+    if not package:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found"
+        )
+    
+    if not package.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot assign inactive package"
+        )
+    
+    # Determine subscription duration
+    from datetime import timedelta
+    if package_data.duration_days:
+        end_date = datetime.utcnow() + timedelta(days=package_data.duration_days)
+    elif package.billing_period == "free":
+        end_date = None  # Free subscription has no end date
+    elif package.billing_period == "monthly":
+        end_date = datetime.utcnow() + timedelta(days=30)
+    elif package.billing_period == "yearly":
+        end_date = datetime.utcnow() + timedelta(days=365)
+    else:
+        end_date = None
+    
+    # Check for existing active subscription
+    result = await db.execute(
+        select(Subscription)
+        .where(Subscription.user_id == user.id, Subscription.status == "active")
+    )
+    existing_sub = result.scalar_one_or_none()
+    
+    if existing_sub:
+        # Update existing subscription
+        existing_sub.package_id = package.id
+        existing_sub.plan_type = "free" if package.price == 0 else "paid"
+        existing_sub.end_date = end_date
+        existing_sub.updated_at = datetime.utcnow()
+    else:
+        # Create new subscription
+        new_sub = Subscription(
+            user_id=user.id,
+            package_id=package.id,
+            plan_type="free" if package.price == 0 else "paid",
+            status="active",
+            start_date=datetime.utcnow(),
+            end_date=end_date
+        )
+        db.add(new_sub)
+    
+    await db.commit()
+    
+    logger.info(
+        "Admin updated user package",
+        admin_id=str(current_user.id),
+        user_id=user_id,
+        package_name=package.name,
+        duration_days=package_data.duration_days
+    )
+    
+    return {
+        "message": f"User package updated to '{package.name}'",
+        "user_id": user_id,
+        "package": {
+            "id": str(package.id),
+            "name": package.name,
+            "price": float(package.price),
+            "billing_period": package.billing_period,
+            "end_date": end_date.isoformat() if end_date else None
+        }
+    }
+
+
+@router.get("/users/{user_id}/subscription", response_model=dict)
+async def get_user_subscription(
+    user_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get user's current subscription details (admin only).
+    
+    - **user_id**: The user's ID
+    
+    Requires admin role.
+    """
+    # Verify user exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get active subscription
+    result = await db.execute(
+        select(Subscription, Package)
+        .join(Package, Package.id == Subscription.package_id)
+        .where(Subscription.user_id == user.id, Subscription.status == "active")
+    )
+    row = result.first()
+    
+    if not row:
+        return {
+            "user_id": user_id,
+            "subscription": None,
+            "package": None
+        }
+    
+    subscription, package = row
+    
+    return {
+        "user_id": user_id,
+        "subscription": {
+            "id": str(subscription.id),
+            "status": subscription.status,
+            "plan_type": subscription.plan_type,
+            "start_date": subscription.start_date.isoformat() if subscription.start_date else None,
+            "end_date": subscription.end_date.isoformat() if subscription.end_date else None
+        },
+        "package": {
+            "id": str(package.id),
+            "name": package.name,
+            "price": float(package.price),
+            "billing_period": package.billing_period,
+            "daily_upload_limit": package.daily_upload_limit,
+            "daily_nutrition_limit": package.daily_nutrition_limit,
+            "features": package.features
+        }
+    }
+
+
+@router.get("/packages", response_model=list)
+async def list_packages(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all available packages (admin only).
+    
+    Requires admin role.
+    """
+    result = await db.execute(select(Package).where(Package.is_active == True))
+    packages = result.scalars().all()
+    
+    return [
+        {
+            "id": str(pkg.id),
+            "name": pkg.name,
+            "price": float(pkg.price),
+            "billing_period": pkg.billing_period,
+            "daily_upload_limit": pkg.daily_upload_limit,
+            "daily_nutrition_limit": pkg.daily_nutrition_limit,
+            "features": pkg.features,
+            "is_active": pkg.is_active
+        }
+        for pkg in packages
+    ]
+
+
+@router.post("/packages", response_model=dict)
+async def create_package(
+    package_data: CreatePackageRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new subscription package (admin only).
+    
+    Requires admin role.
+    """
+    # Check if package name already exists
+    result = await db.execute(select(Package).where(Package.name == package_data.name))
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Package with name '{package_data.name}' already exists"
+        )
+    
+    # Validate billing_period
+    valid_periods = ["free", "monthly", "yearly"]
+    if package_data.billing_period not in valid_periods:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid billing_period. Must be one of: {valid_periods}"
+        )
+    
+    new_package = Package(
+        name=package_data.name,
+        price=package_data.price,
+        billing_period=package_data.billing_period,
+        daily_upload_limit=package_data.daily_upload_limit,
+        daily_nutrition_limit=package_data.daily_nutrition_limit,
+        features=package_data.features,
+        is_active=package_data.is_active
+    )
+    
+    db.add(new_package)
+    await db.commit()
+    await db.refresh(new_package)
+    
+    logger.info(
+        "Admin created package",
+        admin_id=str(current_user.id),
+        package_name=new_package.name
+    )
+    
+    return {
+        "message": f"Package '{new_package.name}' created successfully",
+        "package": {
+            "id": str(new_package.id),
+            "name": new_package.name,
+            "price": float(new_package.price),
+            "billing_period": new_package.billing_period,
+            "daily_upload_limit": new_package.daily_upload_limit,
+            "daily_nutrition_limit": new_package.daily_nutrition_limit,
+            "features": new_package.features,
+            "is_active": new_package.is_active
+        }
+    }
+
+
+@router.put("/packages/{package_id}", response_model=dict)
+async def update_package(
+    package_id: str,
+    package_data: UpdatePackageRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update an existing subscription package (admin only).
+    
+    Requires admin role.
+    """
+    result = await db.execute(select(Package).where(Package.id == package_id))
+    package = result.scalar_one_or_none()
+    
+    if not package:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found"
+        )
+    
+    # Update fields if provided
+    if package_data.name is not None:
+        # Check if name already exists for another package
+        result = await db.execute(select(Package).where(Package.name == package_data.name, Package.id != package_id))
+        existing = result.scalar_one_or_none()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Package with name '{package_data.name}' already exists"
+            )
+        package.name = package_data.name
+    
+    if package_data.price is not None:
+        package.price = package_data.price
+    
+    if package_data.billing_period is not None:
+        valid_periods = ["free", "monthly", "yearly"]
+        if package_data.billing_period not in valid_periods:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid billing_period. Must be one of: {valid_periods}"
+            )
+        package.billing_period = package_data.billing_period
+    
+    if package_data.daily_upload_limit is not None:
+        package.daily_upload_limit = package_data.daily_upload_limit
+    
+    if package_data.daily_nutrition_limit is not None:
+        package.daily_nutrition_limit = package_data.daily_nutrition_limit
+    
+    if package_data.features is not None:
+        package.features = package_data.features
+    
+    if package_data.is_active is not None:
+        package.is_active = package_data.is_active
+    
+    package.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(package)
+    
+    logger.info(
+        "Admin updated package",
+        admin_id=str(current_user.id),
+        package_id=package_id
+    )
+    
+    return {
+        "message": f"Package '{package.name}' updated successfully",
+        "package": {
+            "id": str(package.id),
+            "name": package.name,
+            "price": float(package.price),
+            "billing_period": package.billing_period,
+            "daily_upload_limit": package.daily_upload_limit,
+            "daily_nutrition_limit": package.daily_nutrition_limit,
+            "features": package.features,
+            "is_active": package.is_active
+        }
+    }
+
+
+@router.delete("/packages/{package_id}", response_model=dict)
+async def deactivate_package(
+    package_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Deactivate a subscription package (admin only). Does not delete, just marks as inactive.
+    
+    Requires admin role.
+    """
+    result = await db.execute(select(Package).where(Package.id == package_id))
+    package = result.scalar_one_or_none()
+    
+    if not package:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found"
+        )
+    
+    package.is_active = False
+    package.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    
+    logger.info(
+        "Admin deactivated package",
+        admin_id=str(current_user.id),
+        package_id=package_id
+    )
+    
+    return {
+        "message": f"Package '{package.name}' deactivated successfully",
+        "package_id": package_id
+    }
+
+
+@router.post("/packages/{package_id}/activate", response_model=dict)
+async def activate_package(
+    package_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Activate a subscription package (admin only).
+    
+    Requires admin role.
+    """
+    result = await db.execute(select(Package).where(Package.id == package_id))
+    package = result.scalar_one_or_none()
+    
+    if not package:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found"
+        )
+    
+    package.is_active = True
+    package.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    
+    logger.info(
+        "Admin activated package",
+        admin_id=str(current_user.id),
+        package_id=package_id
+    )
+    
+    return {
+        "message": f"Package '{package.name}' activated successfully",
+        "package": {
+            "id": str(package.id),
+            "name": package.name,
+            "is_active": package.is_active
+        }
     }
 
 
