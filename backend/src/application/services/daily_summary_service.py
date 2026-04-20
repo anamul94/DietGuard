@@ -20,9 +20,12 @@ from .token_usage_service import TokenUsageService
 class DailySummaryService:
     @staticmethod
     async def _build_generation_context(db: AsyncSession, user_id: Any, target_date: date) -> Dict[str, Any]:
+        from sqlalchemy.orm import selectinload
+        
         meals_result = await db.execute(
             select(MealEvent)
             .where(MealEvent.user_id == user_id, MealEvent.meal_date == target_date)
+            .options(selectinload(MealEvent.items))
         )
         meals = meals_result.scalars().all()
         
@@ -70,7 +73,6 @@ class DailySummaryService:
                     "carbs_g": float(m.total_carbohydrates_g) if m.total_carbohydrates_g else 0,
                     "fat_g": float(m.total_fat_g) if m.total_fat_g else 0,
                     "time": m.meal_time.strftime("%H:%M") if m.meal_time else None,
-                    "items": m.items if hasattr(m, 'items') else [],
                 } for m in meals
             ],
             "nutrition_totals": {
