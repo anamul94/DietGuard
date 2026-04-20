@@ -1,81 +1,92 @@
 import base64
 import io
-from typing import Dict, List
+from typing import Dict, Tuple
 from fastapi import UploadFile, HTTPException
 from PIL import Image
 
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
-MAX_DIMENSION = 1920  # Max dimension (width or height) while maintaining quality
+MAX_DIMENSION = 2048  # Max dimension while preserving food detail
 
 
 def encode_image_to_base64(image_file: UploadFile) -> Dict[str, str]:
-    """Convert uploaded image to base64 string
-    
-    If image is larger than 5MB, it will be compressed while maintaining quality
+    """Convert uploaded image to base64 string.
+
+    Images over 5MB are compressed while preserving visual fidelity.
     """
     try:
-        # Read the image file
         image_bytes = image_file.file.read()
         file_size = len(image_bytes)
-        
-        # Validate it's an image
+
         img = Image.open(io.BytesIO(image_bytes))
-        
-        # Compress if file size > 5MB
+        original_format = img.format  # PIL loses .format after any transform
+
         if file_size > MAX_FILE_SIZE_BYTES:
-            # Resize while maintaining aspect ratio
-            img = _compress_image(img)
-            
-            # Re-encode to bytes with high quality
-            img_byte_arr = io.BytesIO()
-            save_format = img.format.upper() if img.format and img.format.lower() in ['jpeg', 'jpg', 'png', 'webp'] else 'JPEG'
-            img.save(img_byte_arr, format=save_format, quality=90, optimize=True)
-            img_byte_arr.seek(0)
-            image_bytes = img_byte_arr.getvalue()
-        
-        # Convert to base64
+            image_bytes, save_fmt = _compress_to_target(img, original_format, MAX_FILE_SIZE_BYTES)
+            # Update mime type to reflect actual saved format
+            original_format = save_fmt
+
         base64_string = base64.b64encode(image_bytes).decode('utf-8')
-        
-        # Get the image format
-        format_lower = img.format.lower() if img.format else 'jpeg'
+
+        format_lower = (original_format or 'jpeg').lower()
+        if format_lower == 'jpg':
+            format_lower = 'jpeg'
         mime_type = f"image/{format_lower}"
-        
+
         return {
             "mime_type": mime_type,
             "base64_string": base64_string,
             "original_size": file_size,
-            "compressed_size": len(image_bytes) if file_size > MAX_FILE_SIZE_BYTES else None
+            "compressed_size": len(image_bytes) if file_size > MAX_FILE_SIZE_BYTES else None,
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
 
 
-def _compress_image(img: Image.Image) -> Image.Image:
-    """Compress image by resizing while maintaining quality
-    
-    Uses Lanczos resampling for high-quality downscaling
-    Maintains aspect ratio
-    """
-    # Get current dimensions
-    width, height = img.size
-    
-    # Check if resizing is needed
-    if width <= MAX_DIMENSION and height <= MAX_DIMENSION:
+
+def _resize_to_max_dimension(img: Image.Image, max_dim: int) -> Image.Image:
+    w, h = img.size
+    if w <= max_dim and h <= max_dim:
         return img
-    
-    # Calculate new dimensions maintaining aspect ratio
-    if width > height:
-        new_width = MAX_DIMENSION
-        new_height = int((height / width) * MAX_DIMENSION)
-    else:
-        new_height = MAX_DIMENSION
-        new_width = int((width / height) * MAX_DIMENSION)
-    
-    # Resize with high-quality resampling (Lanczos)
-    resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    
-    return resized_img
+    scale = max_dim / max(w, h)
+    return img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+
+
+def _compress_to_target(img: Image.Image, original_format: str | None, target_bytes: int) -> Tuple[bytes, str]:
+    """Compress to WebP, iterating quality then dimensions until under target_bytes.
+
+    WebP handles alpha natively (no colour artifacts), gives better quality
+    at smaller sizes than JPEG, and works for all input formats.
+    """
+    # WebP supports alpha natively — no need to flatten
+    if img.mode not in ('RGB', 'RGBA'):
+        img = img.convert('RGBA' if 'A' in img.getbands() else 'RGB')
+
+    dim_scales = [1.0, 0.85, 0.70, 0.55, 0.40]
+    quality_steps = [95, 90, 85, 80, 75, 65]
+
+    orig_w, orig_h = img.size
+
+    for scale in dim_scales:
+        if scale < 1.0:
+            target_w = int(orig_w * scale)
+            target_h = int(orig_h * scale)
+            max_at_scale = min(MAX_DIMENSION, max(target_w, target_h))
+            scaled_img = _resize_to_max_dimension(
+                img.resize((target_w, target_h), Image.Resampling.LANCZOS), max_at_scale
+            )
+        else:
+            scaled_img = _resize_to_max_dimension(img, MAX_DIMENSION)
+
+        for quality in quality_steps:
+            buf = io.BytesIO()
+            scaled_img.save(buf, format='WEBP', quality=quality, method=6)
+            result = buf.getvalue()
+            if len(result) <= target_bytes:
+                return result, 'WEBP'
+
+    # Return last attempt even if slightly over (extremely rare edge case)
+    return result, 'WEBP'
 
 
 def encode_pdf_to_base64(pdf_file: UploadFile) -> Dict[str, str]:
