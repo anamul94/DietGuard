@@ -127,14 +127,29 @@ async def food_agent(data, content_type, mime_type, location=None):
         result = await asyncio.to_thread(
             lambda: structured_llm.invoke([system_message, message])
         )
-        
+
         # Extract parsed data and metadata
         parsed: FoodAnalysis = result["parsed"]
         raw = result["raw"]  # AIMessage with metadata
         meta = raw.response_metadata if hasattr(raw, 'response_metadata') else {}
         usage = raw.usage_metadata if hasattr(raw, 'usage_metadata') else {}
-        
-        # Print metadata for debugging
+
+        # parsed=None means the LLM returned something that doesn't match FoodAnalysis
+        # (e.g. the rejection JSON {"error": true, "message": "..."} for non-food images)
+        if parsed is None:
+            import json as _json
+            raw_content = raw.content if hasattr(raw, 'content') else ""
+            try:
+                error_payload = _json.loads(raw_content) if isinstance(raw_content, str) else {}
+                user_message = error_payload.get("message") or "This does not appear to be a food image. Please upload a photo of a meal, dish, or food item."
+            except Exception:
+                user_message = "Unable to analyze food items at this time. Please try again later."
+            logger.warning("Food agent returned unparseable response",
+                           image_count=image_count,
+                           parsing_error=str(result.get("parsing_error")),
+                           raw_content=raw_content[:200] if isinstance(raw_content, str) else "")
+            return AgentResponse.error_response(user_message)
+
         # Convert Pydantic model to dict for AgentResponse
         structured_data = parsed.model_dump()
         
