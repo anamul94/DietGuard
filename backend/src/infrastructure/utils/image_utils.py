@@ -4,7 +4,10 @@ from typing import Dict, Tuple
 from fastapi import UploadFile, HTTPException
 from PIL import Image
 
-MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB — upload limit
+# Bedrock Converse API limit is ~3.75MB per image. Base64 adds ~33% overhead,
+# so compress to 2.8MB max to ensure the encoded payload stays under the limit.
+BEDROCK_MAX_IMAGE_BYTES = int(2.8 * 1024 * 1024)
 MAX_DIMENSION = 2048  # Max dimension while preserving food detail
 
 
@@ -20,9 +23,8 @@ def encode_image_to_base64(image_file: UploadFile) -> Dict[str, str]:
         img = Image.open(io.BytesIO(image_bytes))
         original_format = img.format  # PIL loses .format after any transform
 
-        if file_size > MAX_FILE_SIZE_BYTES:
-            image_bytes, save_fmt = _compress_to_target(img, original_format, MAX_FILE_SIZE_BYTES)
-            # Update mime type to reflect actual saved format
+        if file_size > BEDROCK_MAX_IMAGE_BYTES:
+            image_bytes, save_fmt = _compress_to_target(img, original_format, BEDROCK_MAX_IMAGE_BYTES)
             original_format = save_fmt
 
         base64_string = base64.b64encode(image_bytes).decode('utf-8')
@@ -36,7 +38,7 @@ def encode_image_to_base64(image_file: UploadFile) -> Dict[str, str]:
             "mime_type": mime_type,
             "base64_string": base64_string,
             "original_size": file_size,
-            "compressed_size": len(image_bytes) if file_size > MAX_FILE_SIZE_BYTES else None,
+            "compressed_size": len(image_bytes) if file_size > BEDROCK_MAX_IMAGE_BYTES else None,
         }
 
     except Exception as e:
