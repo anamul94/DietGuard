@@ -3,7 +3,7 @@ from sqlalchemy import select, and_, func
 from datetime import datetime, date, timezone
 from typing import Optional, Dict, Any
 
-from ...infrastructure.database.auth_models import User, Subscription, UploadLimit
+from ...infrastructure.database.auth_models import User, Subscription, UploadLimit, Package
 from ...infrastructure.utils.logger import logger
 from ...infrastructure.config.settings import settings
 
