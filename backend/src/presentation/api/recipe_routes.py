@@ -121,11 +121,14 @@ async def upload_diet_chart(
             )
         
         if file.content_type == "application/pdf":
-            file_data, mime_type = await encode_pdf_to_base64(file)
+            pdf_result = encode_pdf_to_base64(file)
+            file_data = pdf_result["base64_string"]
+            mime_type = pdf_result["mime_type"]
             file_type = "file"
         else:
-            file_data = await encode_image_to_base64(file)
-            mime_type = file.content_type
+            img_result = encode_image_to_base64(file)
+            file_data = img_result["base64_string"]
+            mime_type = img_result["mime_type"]
             file_type = "image"
         
         result = await RecipeService.upload_diet_chart(
