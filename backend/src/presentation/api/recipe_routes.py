@@ -141,7 +141,7 @@ async def upload_diet_chart(
             profile_name=profile_name,
         )
         
-        await SubscriptionService.increment_upload_usage(db, current_user)
+        await SubscriptionService.increment_upload_count(db, current_user)
         
         return result
         
