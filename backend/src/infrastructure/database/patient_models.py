@@ -88,6 +88,7 @@ class PatientPersona(Base):
     nationality = Column(String(50), nullable=True)  # Country
     activity_level = Column(String(20), nullable=False, default="sedentary")  # sedentary/light/moderate/active/very_active
     timezone = Column(String(50), nullable=False, default="UTC")  # IANA timezone, e.g. Asia/Dhaka
+    cuisine_preference = Column(String(50), nullable=True)  # Preferred cuisine for recipe suggestions (indian, italian, chinese, etc.)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

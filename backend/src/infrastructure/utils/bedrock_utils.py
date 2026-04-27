@@ -33,6 +33,8 @@ AGENT_NAMES = (
     "report_merge_agent",
     "summary_agent",
     "test_agent",
+    "diet_chart_agent",
+    "recipe_suggestion_agent",
 )
 
 
@@ -287,6 +289,8 @@ KNOWN_AGENT_NAMES = (
     "nutrition_calculator_agent",
     "daily_summary_agent",
     "diet_plan_agent",
+    "diet_chart_agent",
+    "recipe_suggestion_agent",
 )
 
 # Cache: agent_name -> resolved settings from env. Populated by get_agent_llm_settings().

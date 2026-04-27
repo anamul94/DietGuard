@@ -1,6 +1,6 @@
 # DietGuard API Reference
 
-Last updated: March 13, 2026
+Last updated: April 27, 2026
 
 ## Overview
 
@@ -400,6 +400,225 @@ Expected language:
 - "Possible contributing factors: meal carb load, poor sleep, stress, medication timing"
 
 Do not interpret daily/weekly insight responses as definitive medical causality.
+
+## Recipe Suggestion Endpoints
+
+The recipe suggestion system helps users with doctor-prescribed diet restrictions by generating personalized recipes.
+
+### Overview
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/health/recipes/diet-profiles/upload` | Yes | Upload diet chart for AI extraction |
+| `POST` | `/api/v1/health/recipes/diet-profiles/manual` | Yes | Create diet profile manually |
+| `GET` | `/api/v1/health/recipes/diet-profiles` | Yes | List all diet profiles |
+| `GET` | `/api/v1/health/recipes/diet-profiles/active` | Yes | Get active diet profile |
+| `GET` | `/api/v1/health/recipes/diet-profiles/{id}` | Yes | Get specific diet profile |
+| `PATCH` | `/api/v1/health/recipes/diet-profiles/{id}` | Yes | Update/confirm diet profile |
+| `POST` | `/api/v1/health/recipes/suggest` | Yes | Generate single on-demand recipe |
+| `POST` | `/api/v1/health/recipes/generate-schedule` | Yes | Generate weekly meal schedule |
+| `GET` | `/api/v1/health/recipes/schedules/current` | Yes | Get current weekly schedule |
+| `GET` | `/api/v1/health/recipes` | Yes | Get recipe history/favorites |
+| `GET` | `/api/v1/health/recipes/{id}` | Yes | Get recipe details |
+| `PATCH` | `/api/v1/health/recipes/{id}/favorite` | Yes | Toggle recipe favorite status |
+| `POST` | `/api/v1/health/recipes/{id}/track` | Yes | Add recipe to meal tracker |
+
+### `POST /api/v1/health/recipes/diet-profiles/upload`
+
+Upload a doctor's diet chart, prescription, or nutritionist plan for AI extraction.
+
+**Request:**
+- `multipart/form-data`
+- `file`: image (JPG, PNG, WebP) or PDF
+- `profile_name`: (optional) name for the diet profile
+
+**Response:**
+```json
+{
+  "profile": {
+    "id": "uuid",
+    "user_id": "uuid",
+    "profile_name": "My Diabetes Diet",
+    "medical_condition": "diabetes",
+    "avoid_foods": ["sugar", "fried food", "white rice"],
+    "limit_foods": ["salt", "carbs"],
+    "allowed_foods": ["vegetables", "lean protein", "whole grains"],
+    "meal_frequency": 5,
+    "calorie_limit": 1800,
+    "salt_limit": "low sodium",
+    "doctor_notes": "Keep dinner light. Avoid refined carbs.",
+    "extraction_status": "pending",
+    "cuisine": [],
+    "diet_type": null,
+    "allergies": [],
+    "is_active": true,
+    "created_at": "2026-04-27T10:00:00Z"
+  },
+  "extraction_confidence": "high",
+  "unreadable_sections": []
+}
+```
+
+### `POST /api/v1/health/recipes/diet-profiles/manual`
+
+Create a diet profile with manually entered data.
+
+**Request body:**
+```json
+{
+  "profile_name": "My Custom Diet",
+  "medical_condition": "hypertension",
+  "avoid_foods": ["salt", "processed food"],
+  "limit_foods": ["red meat"],
+  "allowed_foods": ["vegetables", "fruits", "fish"],
+  "meal_frequency": 4,
+  "calorie_limit": 2000,
+  "salt_limit": "low sodium",
+  "doctor_notes": "Reduce sodium intake",
+  "cuisine": ["Indian", "Mediterranean"],
+  "diet_type": "non_vegetarian",
+  "allergies": ["nuts"],
+  "disliked_ingredients": ["eggplant"],
+  "cooking_time_pref": "30_min",
+  "budget_level": "medium"
+}
+```
+
+### `PATCH /api/v1/health/recipes/diet-profiles/{id}`
+
+Update a diet profile. Use this to:
+- Confirm extracted restrictions after user review
+- Edit restrictions
+- Set cuisine and cooking preferences
+
+**Request body:**
+```json
+{
+  "extraction_status": "confirmed",
+  "cuisine": ["Indian", "Bengali"],
+  "diet_type": "non_vegetarian",
+  "allergies": ["nuts", "shellfish"],
+  "cooking_time_pref": "30_min"
+}
+```
+
+### `POST /api/v1/health/recipes/suggest`
+
+Generate a single on-demand recipe.
+
+**Request body:**
+```json
+{
+  "diet_profile_id": "uuid",
+  "meal_type": "lunch",
+  "cuisine_override": ["Italian"]
+}
+```
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "recipe_name": "Grilled Chicken with Quinoa",
+  "cuisine": "Italian",
+  "meal_type": "lunch",
+  "description": "Healthy grilled chicken breast with herb quinoa",
+  "ingredients": [
+    {"name": "chicken breast", "quantity": "200g", "notes": "boneless, skinless"},
+    {"name": "quinoa", "quantity": "100g", "notes": "rinsed"},
+    {"name": "olive oil", "quantity": "2 tbsp", "notes": null}
+  ],
+  "instructions": [
+    {"step_number": 1, "instruction": "Marinate chicken with herbs and olive oil"},
+    {"step_number": 2, "instruction": "Grill chicken for 6-7 minutes each side"},
+    {"step_number": 3, "instruction": "Cook quinoa according to package directions"}
+  ],
+  "prep_time_minutes": 15,
+  "cook_time_minutes": 20,
+  "servings": 2,
+  "nutrition": {
+    "calories": 450,
+    "protein_g": 42,
+    "carbs_g": 35,
+    "fat_g": 12,
+    "fiber_g": 5
+  },
+  "diet_match_reasons": [
+    "High protein, low carb",
+    "No added sugar",
+    "Fits calorie target"
+  ],
+  "warnings": [],
+  "is_favorite": false,
+  "created_at": "2026-04-27T12:00:00Z"
+}
+```
+
+### `POST /api/v1/health/recipes/generate-schedule`
+
+Generate a complete weekly meal schedule.
+
+**Request body:**
+```json
+{
+  "diet_profile_id": "uuid",
+  "week_start_date": "2026-04-28",
+  "cuisine_override": ["Indian", "Bengali"]
+}
+```
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "diet_profile_id": "uuid",
+  "week_start_date": "2026-04-28",
+  "compliance_score": 0,
+  "is_active": true,
+  "created_at": "2026-04-27T10:00:00Z",
+  "days": {
+    "monday": {
+      "breakfast": { /* recipe object */ },
+      "lunch": { /* recipe object */ },
+      "dinner": { /* recipe object */ },
+      "snack": { /* recipe object */ }
+    },
+    "tuesday": { /* ... */ }
+  }
+}
+```
+
+### `POST /api/v1/health/recipes/{id}/track`
+
+Add a recipe to the meal tracker. When status is "cooked" or "ate", the recipe's nutrition is automatically added to the user's daily intake.
+
+**Request body:**
+```json
+{
+  "recipe_id": "uuid",
+  "scheduled_date": "2026-04-28",
+  "status": "ate"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "recipe_id": "uuid",
+  "meal_event_id": "uuid",
+  "scheduled_date": "2026-04-28",
+  "status": "ate",
+  "recipe_name": "Grilled Chicken with Quinoa",
+  "nutrition_added": {
+    "calories": 450,
+    "protein_g": 42,
+    "carbs_g": 35,
+    "fat_g": 12
+  }
+}
+```
 
 ## User Endpoints
 

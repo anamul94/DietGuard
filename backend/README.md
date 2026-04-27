@@ -9,6 +9,16 @@ An AI-powered nutritionist application with comprehensive authentication, role-b
 - 🍎 **Food Analysis** - Upload food images for nutritional analysis
 - 👩‍⚕️ **Nutritionist Recommendations** - Get personalized dietary advice
 - 📱 **QR Code Support** - Mobile-friendly food upload via QR code
+- 🍳 **Recipe Suggestions** - AI-generated recipes based on doctor-prescribed diet restrictions
+
+### Recipe Suggestion Feature
+The recipe suggestion system helps users with doctor-prescribed diet restrictions:
+- 📄 **Diet Chart Upload** - Upload doctor's diet charts, prescriptions, or nutritionist plans
+- 🤖 **AI Extraction** - Automatically extracts food restrictions (avoid, limit, allowed)
+- 🍽️ **Personalized Recipes** - Generates recipes matching user's diet and cuisine preferences
+- 📅 **Weekly Meal Schedule** - Complete 7-day meal planning
+- 📊 **Nutrition Integration** - Links recipes to existing meal tracker
+- ⚠️ **Safety Filters** - Ensures recipes don't conflict with restrictions
 
 ### Authentication & Security
 - 🔐 **JWT Authentication** - Secure token-based authentication
@@ -143,6 +153,10 @@ DIET_PLAN_AGENT_LLM_PROVIDER=ollama
 DIET_PLAN_AGENT_LLM_MODEL=glm-4.7-flash:latest
 REPORT_AGENT_LLM_PROVIDER=bedrock
 REPORT_AGENT_LLM_MODEL=apac.anthropic.claude-3-7-sonnet-20250219-v1:0
+DIET_CHART_AGENT_LLM_PROVIDER=bedrock
+DIET_CHART_AGENT_LLM_MODEL=apac.anthropic.claude-3-7-sonnet-20250219-v1:0
+RECIPE_SUGGESTION_AGENT_LLM_PROVIDER=bedrock
+RECIPE_SUGGESTION_AGENT_LLM_MODEL=apac.anthropic.claude-3-7-sonnet-20250219-v1:0
 ```
 
 ## API Endpoints
@@ -156,12 +170,30 @@ Primary endpoint groups:
 - Authentication: `/api/v1/auth/*`
 - AI analysis: `/api/v1/ai/*`
 - Health timeline: `/api/v1/health/*`
+- Recipe suggestions: `/api/v1/health/recipes/*`
 - Users: `/api/v1/users/*`
 - Packages: `/api/v1/packages/*`
 - Payments: `/api/v1/payment*`
 - Admin: `/api/v1/admin/*`
 
-Key current endpoints:
+### Recipe Suggestion Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/health/recipes/diet-profiles/upload` | Upload diet chart for extraction |
+| POST | `/api/v1/health/recipes/diet-profiles/manual` | Create diet profile manually |
+| GET | `/api/v1/health/recipes/diet-profiles` | List all diet profiles |
+| GET | `/api/v1/health/recipes/diet-profiles/active` | Get active diet profile |
+| PATCH | `/api/v1/health/recipes/diet-profiles/{id}` | Update diet profile |
+| POST | `/api/v1/health/recipes/suggest` | Generate single recipe |
+| POST | `/api/v1/health/recipes/generate-schedule` | Generate weekly schedule |
+| GET | `/api/v1/health/recipes/schedules/current` | Get current schedule |
+| GET | `/api/v1/health/recipes` | Get recipe history |
+| GET | `/api/v1/health/recipes/{id}` | Get recipe details |
+| PATCH | `/api/v1/health/recipes/{id}/favorite` | Toggle favorite |
+| POST | `/api/v1/health/recipes/{id}/track` | Add to meal tracker |
+
+### Other Key Endpoints
 
 - `POST /api/v1/ai/upload-food`
 - `POST /api/v1/ai/upload-report`
@@ -189,6 +221,7 @@ Interactive API documentation is available at:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 - **Repository API Reference**: `../docs/api-reference.md`
+- **Recipe Feature Guide**: `../docs/recipe-feature-guide.md`
 
 ## Architecture
 
@@ -196,7 +229,7 @@ Interactive API documentation is available at:
 - **Backend**: FastAPI + Python 3.11
 - **Database**: PostgreSQL 14+ with SQLAlchemy ORM
 - **Authentication**: JWT with Argon2 password hashing
-- **AI Agents**: AWS Bedrock (Claude 3 Haiku)
+- **AI Agents**: AWS Bedrock (Claude 3.7 Sonnet)
 - **Cache**: Redis
 - **Deployment**: Docker Compose
 
@@ -213,6 +246,10 @@ The application uses the following main tables:
 - `password_resets` - Password reset tokens
 - `report_data` - Medical report data
 - `nutrition_data` - Food analysis data
+- `diet_profiles` - User diet restriction profiles
+- `generated_recipes` - AI-generated recipes
+- `weekly_meal_schedules` - Weekly meal plans
+- `recipe_tracking_entries` - Recipe-to-meal-tracker links
 
 ## Security Features
 

@@ -8,6 +8,7 @@ from src.infrastructure.database.database import Base, DATABASE_URL
 from src.infrastructure.database.auth_models import *  # noqa: F401,F403
 from src.infrastructure.database.health_models import *  # noqa: F401,F403
 from src.infrastructure.database.patient_models import *  # noqa: F401,F403
+from src.infrastructure.database.recipe_models import *  # noqa: F401,F403
 from src.application.services.hipaa_audit_service import HIPAAAuditLog  # noqa: F401
 
 config = context.config

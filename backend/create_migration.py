@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Script to create initial database migration
+Script to create database migration with a custom message.
+Usage: uv run python create_migration.py "Your migration message"
 """
 import subprocess
 import sys
 
-def create_migration():
+
+def create_migration(message: str):
     try:
-        # Create initial migration
         result = subprocess.run([
-            "uv", "run", "alembic", "revision", "--autogenerate", 
-            "-m", "Create initial tables"
+            "uv", "run", "alembic", "revision", "--autogenerate",
+            "-m", message
         ], check=True, capture_output=True, text=True)
         
         print("✅ Migration created successfully!")
@@ -21,5 +22,11 @@ def create_migration():
         print(e.stderr)
         sys.exit(1)
 
+
 if __name__ == "__main__":
-    create_migration()
+    if len(sys.argv) < 2:
+        print("Usage: uv run python create_migration.py \"Your migration message\"")
+        sys.exit(1)
+    
+    message = sys.argv[1]
+    create_migration(message)

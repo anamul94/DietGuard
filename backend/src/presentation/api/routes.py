@@ -18,6 +18,7 @@ from .health_routes import router as health_router
 from .package_routes import router as package_router
 from .payment_routes import router as payment_router
 from .user_routes import router as user_router
+from .recipe_routes import router as recipe_router
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -74,6 +75,7 @@ app = FastAPI(
         {"name": "Payments", "description": "Payment processing and subscription upgrades."},
         {"name": "Admin", "description": "Administrative operations."},
         {"name": "Health Timeline", "description": "Structured medical profile, meals, vitals, and insights."},
+        {"name": "Recipe Suggestion", "description": "AI-powered recipe suggestions based on diet restrictions."},
     ],
     contact={"name": "DietGuard Support", "email": "support@dietguard.ai"},
     license_info={"name": "MIT"},
@@ -91,6 +93,7 @@ app.add_middleware(RequestLoggingMiddleware)
 app.include_router(auth_router, prefix="/api/v1/auth")
 app.include_router(ai_agent_router, prefix="/api/v1/ai")
 app.include_router(health_router, prefix="/api/v1/health")
+app.include_router(recipe_router, prefix="/api/v1/health")
 app.include_router(user_router, prefix="/api/v1/users")
 app.include_router(payment_router, prefix="/api/v1/payment")
 app.include_router(package_router, prefix="/api/v1")
