@@ -21,6 +21,7 @@ class DietProfile(Base):
     User's diet profile extracted from doctor's diet chart/instructions.
     
     Stores both extracted restrictions and user preferences for recipe generation.
+    Also stores detailed meal plans and nutrition targets if specified in the document.
     """
     __tablename__ = "diet_profiles"
 
@@ -39,6 +40,9 @@ class DietProfile(Base):
     doctor_notes = Column(Text, nullable=True)
     extraction_status = Column(String(30), nullable=False, default="pending")
     extracted_raw_text = Column(Text, nullable=True)
+    
+    nutrition_targets = Column(JSONB, nullable=True, default=dict)
+    meal_plans = Column(JSONB, nullable=False, default=list)
     
     cuisine = Column(JSONB, nullable=False, default=list)
     diet_type = Column(String(30), nullable=True)

@@ -100,6 +100,33 @@ class DietProfileUpdateRequest(BaseModel):
     budget_level: Optional[str] = None
 
 
+class NutritionTargetsResponse(BaseModel):
+    calories: Optional[int] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    sodium_mg: Optional[float] = None
+    water_ml: Optional[int] = None
+
+
+class MealPlanItemResponse(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MealPlanTargetResponse(BaseModel):
+    meal_type: str
+    foods: List[MealPlanItemResponse] = []
+    calories: Optional[int] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    timing: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class DietProfileResponse(BaseModel):
     id: str
     user_id: str
@@ -116,6 +143,9 @@ class DietProfileResponse(BaseModel):
     doctor_notes: Optional[str]
     extraction_status: str
     extracted_raw_text: Optional[str]
+    
+    nutrition_targets: Dict[str, Any] = {}
+    meal_plans: List[Dict[str, Any]] = []
     
     cuisine: List[str]
     diet_type: Optional[str]

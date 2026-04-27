@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,36 @@ from ..utils.bedrock_utils import (
     is_llm_debug_enabled,
 )
 from ..utils.logger import logger
+
+
+class MealPlanItem(BaseModel):
+    """A single food item within a meal."""
+    name: str = Field(description="Food item name")
+    quantity: str | None = Field(default=None, description="Quantity or portion size")
+    notes: str | None = Field(default=None, description="Preparation notes or alternatives")
+
+
+class MealPlanTarget(BaseModel):
+    """Target/suggested meal plan for a specific meal type."""
+    meal_type: str = Field(description="Meal type: breakfast, lunch, dinner, snack, etc.")
+    foods: List[MealPlanItem] = Field(default_factory=list, description="List of food items for this meal")
+    calories: int | None = Field(default=None, description="Target calories for this meal")
+    protein_g: float | None = Field(default=None, description="Target protein in grams")
+    carbs_g: float | None = Field(default=None, description="Target carbohydrates in grams")
+    fat_g: float | None = Field(default=None, description="Target fat in grams")
+    timing: str | None = Field(default=None, description="Suggested timing (e.g., '8:00 AM', 'afternoon')")
+    notes: str | None = Field(default=None, description="Special instructions for this meal")
+
+
+class NutritionTargets(BaseModel):
+    """Daily nutrition targets from the diet plan."""
+    calories: int | None = Field(default=None, description="Daily calorie target")
+    protein_g: float | None = Field(default=None, description="Daily protein target in grams")
+    carbs_g: float | None = Field(default=None, description="Daily carbohydrate target in grams")
+    fat_g: float | None = Field(default=None, description="Daily fat target in grams")
+    fiber_g: float | None = Field(default=None, description="Daily fiber target in grams")
+    sodium_mg: float | None = Field(default=None, description="Daily sodium limit in mg")
+    water_ml: int | None = Field(default=None, description="Daily water intake target in ml")
 
 
 class DietChartExtraction(BaseModel):
@@ -47,6 +77,14 @@ class DietChartExtraction(BaseModel):
     doctor_notes: str | None = Field(
         default=None,
         description="Additional notes from doctor/dietitian"
+    )
+    nutrition_targets: NutritionTargets | None = Field(
+        default=None,
+        description="Detailed daily nutrition targets if specified in the document"
+    )
+    meal_plans: List[MealPlanTarget] = Field(
+        default_factory=list,
+        description="Detailed meal-by-meal plan if specified in the document"
     )
     extraction_confidence: str = Field(
         default="high",
@@ -125,6 +163,7 @@ async def diet_chart_agent(
         "- Handwritten diet instructions\n"
         "- Food restriction lists\n"
         "- Meal timing guidelines\n"
+        "- Detailed meal-by-meal diet plans\n"
         "\n"
         "REJECTED CONTENT (return with extraction_confidence='none' and explain in doctor_notes):\n"
         "- General medical reports (lab results, X-rays) - these are handled by another system\n"
@@ -141,6 +180,49 @@ async def diet_chart_agent(
         "7. Note salt/sodium restrictions\n"
         "8. Capture any additional doctor notes\n"
         "\n"
+        "DETAILED NUTRITION TARGETS:\n"
+        "If the document specifies daily nutrition targets, extract them in nutrition_targets:\n"
+        "- Daily calories, protein, carbs, fat, fiber targets\n"
+        "- Sodium/salt limits in mg\n"
+        "- Water intake recommendations\n"
+        "\n"
+        "DETAILED MEAL PLANS:\n"
+        "If the document contains a meal-by-meal plan, extract each meal in meal_plans:\n"
+        "- meal_type: breakfast, mid_morning, lunch, snack, dinner, etc.\n"
+        "- foods: list of specific food items with quantities\n"
+        "- calories, protein_g, carbs_g, fat_g: per-meal targets if specified\n"
+        "- timing: suggested time (e.g., '8:00 AM', 'between meals')\n"
+        "- notes: special instructions (e.g., 'eat slowly', 'with water')\n"
+        "\n"
+        "Example meal plan extraction:\n"
+        "Document shows:\n"
+        "  Breakfast (8 AM): 2 slices whole wheat bread, 1 boiled egg, 1 cup milk (300 kcal)\n"
+        "  Lunch (1 PM): 1 cup rice, 100g grilled chicken, 1 cup vegetables (500 kcal)\n"
+        "\n"
+        "Extract as:\n"
+        "  meal_plans: [\n"
+        "    {\n"
+        "      meal_type: 'breakfast',\n"
+        "      foods: [\n"
+        "        {name: 'whole wheat bread', quantity: '2 slices'},\n"
+        "        {name: 'boiled egg', quantity: '1'},\n"
+        "        {name: 'milk', quantity: '1 cup'}\n"
+        "      ],\n"
+        "      calories: 300,\n"
+        "      timing: '8:00 AM'\n"
+        "    },\n"
+        "    {\n"
+        "      meal_type: 'lunch',\n"
+        "      foods: [\n"
+        "        {name: 'rice', quantity: '1 cup'},\n"
+        "        {name: 'grilled chicken', quantity: '100g'},\n"
+        "        {name: 'vegetables', quantity: '1 cup'}\n"
+        "      ],\n"
+        "      calories: 500,\n"
+        "      timing: '1:00 PM'\n"
+        "    }\n"
+        "  ]\n"
+        "\n"
         "CONFIDENCE LEVELS:\n"
         "- 'high': Document is clearly a diet chart with legible instructions\n"
         "- 'medium': Document appears to be diet-related but some parts are unclear\n"
@@ -151,8 +233,9 @@ async def diet_chart_agent(
         "- Do NOT diagnose conditions - only extract what is explicitly written\n"
         "- Do NOT add medical advice beyond what's in the document\n"
         "- If the document mentions 'low sodium', 'no added salt', etc., include in salt_limit\n"
-        "- Preserve exact food names as written\n"
+        "- Preserve exact food names and quantities as written\n"
         "- If meal frequency is not specified, leave as null\n"
+        "- If no detailed meal plan is in the document, leave meal_plans as empty list\n"
     )
     
     system_message = {

@@ -85,6 +85,8 @@ class RecipeService:
             calorie_limit=extraction_data.get("calorie_limit"),
             salt_limit=extraction_data.get("salt_limit"),
             doctor_notes=extraction_data.get("doctor_notes"),
+            nutrition_targets=extraction_data.get("nutrition_targets"),
+            meal_plans=extraction_data.get("meal_plans", []),
             extraction_status="pending",
             extracted_raw_text=raw_text,
         )
@@ -92,12 +94,17 @@ class RecipeService:
         await db.commit()
         await db.refresh(diet_profile)
         
+        meal_plan_count = len(extraction_data.get("meal_plans", []))
+        has_nutrition_targets = bool(extraction_data.get("nutrition_targets"))
+        
         logger.info(
             "Diet profile created from upload",
             user_id=str(user_id),
             profile_id=str(diet_profile.id),
             extraction_confidence=extraction_data.get("extraction_confidence"),
             avoid_count=len(extraction_data.get("avoid_foods", [])),
+            meal_plan_count=meal_plan_count,
+            has_nutrition_targets=has_nutrition_targets,
             duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
         )
         
@@ -105,6 +112,8 @@ class RecipeService:
             "profile": RecipeService._serialize_profile(diet_profile),
             "extraction_confidence": extraction_data.get("extraction_confidence"),
             "unreadable_sections": extraction_data.get("unreadable_sections", []),
+            "meal_plan_count": meal_plan_count,
+            "has_nutrition_targets": has_nutrition_targets,
         }
     
     @staticmethod
@@ -655,14 +664,19 @@ class RecipeService:
         Build context dictionary for recipe generation agent.
         
         Fetches calorie target from:
-        1. Diet profile's calorie_limit (from doctor's chart) - highest priority
-        2. User's NutritionTarget (calculated from their health profile)
-        3. Default fallback (2000 kcal)
+        1. Diet profile's nutrition_targets (detailed macro targets from doctor)
+        2. Diet profile's calorie_limit (from doctor's chart)
+        3. User's NutritionTarget (calculated from their health profile)
+        4. Default fallback (2000 kcal)
+        
+        Also includes meal_plans if available for reference.
         """
         
         cuisines = cuisine_override if cuisine_override else (profile.cuisine or ["Indian"])
         
-        calorie_target = profile.calorie_limit
+        nutrition_targets = profile.nutrition_targets or {}
+        calorie_target = nutrition_targets.get("calories") or profile.calorie_limit
+        
         if not calorie_target:
             nutrition_target = await NutritionTargetService.get_current_target(db, profile.user_id)
             if nutrition_target:
@@ -681,7 +695,14 @@ class RecipeService:
             "snack": round(calories_per_meal * 0.5),
         }
         
-        return {
+        target_meal_plan = None
+        if profile.meal_plans and meal_type:
+            for mp in profile.meal_plans:
+                if mp.get("meal_type", "").lower() == meal_type.lower():
+                    target_meal_plan = mp
+                    break
+        
+        context = {
             "medical_condition": profile.medical_condition,
             "avoid_foods": profile.avoid_foods or [],
             "limit_foods": profile.limit_foods or [],
@@ -694,9 +715,27 @@ class RecipeService:
             "disliked_ingredients": profile.disliked_ingredients or [],
             "cooking_time_pref": profile.cooking_time_pref or "30_min",
             "calorie_target": calorie_target,
+            "protein_target": nutrition_targets.get("protein_g"),
+            "carbs_target": nutrition_targets.get("carbs_g"),
+            "fat_target": nutrition_targets.get("fat_g"),
+            "fiber_target": nutrition_targets.get("fiber_g"),
+            "sodium_limit_mg": nutrition_targets.get("sodium_mg"),
             "meal_type": meal_type,
             "meal_calorie_target": meal_calorie_targets.get(meal_type, round(calories_per_meal)),
         }
+        
+        if target_meal_plan:
+            context["target_meal_plan"] = {
+                "foods": target_meal_plan.get("foods", []),
+                "calories": target_meal_plan.get("calories"),
+                "timing": target_meal_plan.get("timing"),
+                "notes": target_meal_plan.get("notes"),
+            }
+        
+        if profile.meal_plans:
+            context["doctor_meal_plans"] = profile.meal_plans
+        
+        return context
     
     @staticmethod
     def _serialize_profile(profile: DietProfile) -> Dict[str, Any]:
@@ -722,6 +761,8 @@ class RecipeService:
             "disliked_ingredients": profile.disliked_ingredients or [],
             "cooking_time_pref": profile.cooking_time_pref,
             "budget_level": profile.budget_level,
+            "nutrition_targets": profile.nutrition_targets or {},
+            "meal_plans": profile.meal_plans or [],
             "is_active": profile.is_active,
             "created_at": profile.created_at.isoformat(),
             "updated_at": profile.updated_at.isoformat(),
