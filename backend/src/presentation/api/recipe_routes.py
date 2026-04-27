@@ -28,7 +28,8 @@ from ...infrastructure.auth.dependencies import get_current_active_user
 from ...application.services.recipe_service import RecipeService
 from ...application.services.subscription_service import SubscriptionService
 from ...infrastructure.utils.logger import logger
-from ...infrastructure.utils.image_utils import encode_image_to_base64, encode_pdf_to_base64
+from ...infrastructure.utils.image_utils import encode_image_to_base64
+import base64
 
 
 router = APIRouter(prefix="/recipes", tags=["Recipe Suggestion"])
@@ -121,9 +122,9 @@ async def upload_diet_chart(
             )
         
         if file.content_type == "application/pdf":
-            pdf_result = encode_pdf_to_base64(file)
-            file_data = pdf_result["base64_string"]
-            mime_type = pdf_result["mime_type"]
+            pdf_bytes = await file.read()
+            file_data = base64.b64encode(pdf_bytes).decode('utf-8')
+            mime_type = "application/pdf"
             file_type = "file"
         else:
             img_result = encode_image_to_base64(file)

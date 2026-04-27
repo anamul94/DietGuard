@@ -167,17 +167,32 @@ async def diet_chart_agent(
             "role": "user",
             "content": f"{user_content}\n\nDocument text:\n{raw_text}",
         }
+    elif file_type == "file" and mime_type == "application/pdf":
+        message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_content},
+                {
+                    "type": "document",
+                    "source": {
+                        "bytes": data
+                    },
+                    "format": "pdf",
+                    "name": "diet_chart"
+                },
+            ],
+        }
     else:
         message = {
             "role": "user",
             "content": [
                 {"type": "text", "text": user_content},
                 {
-                    "type": file_type,
-                    "source_type": "base64",
-                    "mime_type": mime_type,
-                    "data": data,
-                    "name": "diet_chart"
+                    "type": "image",
+                    "source": {
+                        "bytes": data
+                    },
+                    "format": mime_type.split("/")[-1] if "/" in mime_type else "jpeg",
                 },
             ],
         }
