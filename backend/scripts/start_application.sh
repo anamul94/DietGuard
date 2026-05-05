@@ -36,13 +36,13 @@ EOF
 # Start the backend application service
 sudo systemctl daemon-reload
 sudo systemctl enable dietguard-backend
-sudo systemctl start dietguard-backend
+sudo systemctl restart dietguard-backend
 
 # Wait for application to start
 sleep 20
 
 # Verify application is running
-for i in {1..10}; do
+for i in {1..20}; do
     if curl -f http://localhost:8080/health > /dev/null 2>&1; then
         echo "Application started successfully"
         exit 0
@@ -57,5 +57,5 @@ echo "---- dietguard-backend status ----"
 sudo systemctl status dietguard-backend --no-pager || true
 echo "---- last 200 dietguard-backend logs ----"
 sudo journalctl -u dietguard-backend -n 200 --no-pager || true
-sudo systemctl start temp-health
+sudo systemctl start temp-health || true
 exit 1
