@@ -50,6 +50,18 @@ class DietGuardLogger:
         handler.setFormatter(CloudWatchFormatter())
         
         self.logger.addHandler(handler)
+        
+        # Add FileHandler for CloudWatch Agent
+        log_dir = "/var/log/dietguard"
+        try:
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+            file_handler = logging.FileHandler(f"{log_dir}/app.log")
+            file_handler.setFormatter(CloudWatchFormatter())
+            self.logger.addHandler(file_handler)
+        except Exception as e:
+            # Silently fail or log to console if permissions don't allow writing to /var/log
+            self.logger.warning(f"Could not setup FileHandler for {log_dir}/app.log: {e}")
         self.logger.propagate = False
     
     def _log(self, level: str, message: str, extra_data: Optional[Dict[str, Any]] = None):

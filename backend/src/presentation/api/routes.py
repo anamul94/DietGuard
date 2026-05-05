@@ -14,8 +14,16 @@ from ...infrastructure.database.postgres_client import PostgresClient
 
 import json
 
+from ...infrastructure.utils.xray import configure_xray, XRAY_ENABLED, XRayMiddleware
+
+# Configure X-Ray and patch libraries if enabled
+configure_xray()
+
 # Create FastAPI app first
 app = FastAPI()
+
+if XRAY_ENABLED:
+    app.add_middleware(XRayMiddleware, app=app, segment_name="FoodAppBackend")
 
 @app.on_event("startup")
 async def startup_event():
