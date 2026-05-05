@@ -23,7 +23,7 @@ configure_xray()
 app = FastAPI()
 
 if XRAY_ENABLED:
-    app.add_middleware(XRayMiddleware, app=app, segment_name="FoodAppBackend")
+    app.add_middleware(XRayMiddleware, segment_name="FoodAppBackend")
 
 @app.on_event("startup")
 async def startup_event():
