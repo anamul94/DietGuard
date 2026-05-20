@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
@@ -16,11 +16,19 @@ import json
 
 from ...infrastructure.utils.xray import configure_xray, XRAY_ENABLED, XRayMiddleware
 
+API_TITLE = "Food app backend"
+API_VERSION = "0.1.0"
+API_PREFIX = "/v1"
+
 # Configure X-Ray and patch libraries if enabled
 configure_xray()
 
 # Create FastAPI app first
-app = FastAPI()
+app = FastAPI(
+    title=API_TITLE,
+    version=API_VERSION,
+)
+api_v1_router = APIRouter(prefix=API_PREFIX)
 
 if XRAY_ENABLED:
     app.add_middleware(XRayMiddleware, segment_name="FoodAppBackend")
@@ -110,13 +118,14 @@ async def read_root():
     return {"message": "Hello from prodmeasure!"}
 
 @app.get("/health")
+@api_v1_router.get("/health")
 async def health_check():
     logger.info("Health check requested")
     
     health_status = {
         "status": "healthy",
-        "service": "dietguard-backend",
-        "version": "1.0.0",
+        "service": API_TITLE,
+        "version": API_VERSION,
         "checks": {
             "database": "unknown"
         }
@@ -137,7 +146,7 @@ async def health_check():
         raise HTTPException(status_code=500, detail=health_status)
 
 
-@app.get("/get_report/{user_id}")
+@api_v1_router.get("/get_report/{user_id}")
 async def get_report(user_id: str):
     """Get saved report data for user"""
     logger.info("Report data requested", user_id=user_id)
@@ -156,7 +165,7 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 
-@app.post("/upload_food/")
+@api_v1_router.post("/upload_food/")
 async def upload_food(
     mobile_or_email: str = Form(..., description="User's mobile/email"),
     meal_time: str = Form(..., description="Meal time: breakfast, lunch, dinner, snack"),
@@ -238,7 +247,7 @@ async def upload_food(
         raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
 
 
-@app.delete("/delete_report/{user_id}")
+@api_v1_router.delete("/delete_report/{user_id}")
 async def delete_report(user_id: str):
     """Delete saved report data for user"""
     logger.info("Report deletion requested", user_id=user_id)
@@ -253,7 +262,7 @@ async def delete_report(user_id: str):
     return {"message": f"Report data deleted for user: {user_id}"}
 
 
-@app.get("/debug/redis/{user_id}")
+@api_v1_router.get("/debug/redis/{user_id}")
 async def debug_redis(user_id: str):
     """Debug Redis connection and data"""
     postgres_client = PostgresClient()
@@ -274,7 +283,7 @@ async def debug_redis(user_id: str):
         }
 
 
-@app.post("/upload_report/")
+@api_v1_router.post("/upload_report/")
 async def upload_report(
     mobile_or_email: str = Form(..., description="User's mobile/email"),
     files: List[UploadFile] = File(..., description="Image or PDF files"),
@@ -339,7 +348,7 @@ async def upload_report(
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
 
-@app.get("/get_nutrition/{user_id}")
+@api_v1_router.get("/get_nutrition/{user_id}")
 async def get_nutrition(user_id: str):
     """Get saved nutrition data for user"""
     postgres_client = PostgresClient()
@@ -352,7 +361,7 @@ async def get_nutrition(user_id: str):
 
     return data
 
-@app.get("/test_llm")
+@api_v1_router.get("/test_llm")
 async def test_llm_connection():
     """Test LLM connection with simple query"""
     try:
@@ -372,3 +381,6 @@ async def test_llm_connection():
             "llm_connected": False,
             "error": str(e)
         }
+
+
+app.include_router(api_v1_router)
