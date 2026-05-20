@@ -19,6 +19,7 @@ from ...infrastructure.utils.xray import configure_xray, XRAY_ENABLED, XRayMiddl
 API_TITLE = "Food app backend"
 API_VERSION = "0.1.0"
 API_PREFIX = "/v1"
+API_TAG = "Food App AI"
 
 # Configure X-Ray and patch libraries if enabled
 configure_xray()
@@ -28,7 +29,7 @@ app = FastAPI(
     title=API_TITLE,
     version=API_VERSION,
 )
-api_v1_router = APIRouter(prefix=API_PREFIX)
+api_v1_router = APIRouter(prefix=API_PREFIX, tags=[API_TAG])
 
 if XRAY_ENABLED:
     app.add_middleware(XRayMiddleware, segment_name="FoodAppBackend")
@@ -113,11 +114,11 @@ sio = socketio.AsyncServer(
     async_mode='asgi'
 )
 
-@app.get("/")
+@app.get("/", tags=[API_TAG])
 async def read_root():
     return {"message": "Hello from prodmeasure!"}
 
-@app.get("/health")
+@app.get("/health", tags=[API_TAG])
 @api_v1_router.get("/health")
 async def health_check():
     logger.info("Health check requested")
