@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { logger } from './logger';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://15.207.68.194:8010';
+const API_ORIGIN = (process.env.REACT_APP_API_URL || 'http://15.207.68.194:8010').replace(/\/$/, '');
+const API_VERSION_PREFIX = '/v1';
+export const API_BASE_URL = API_ORIGIN.endsWith(API_VERSION_PREFIX)
+  ? API_ORIGIN
+  : `${API_ORIGIN}${API_VERSION_PREFIX}`;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -18,7 +22,7 @@ export interface UploadReportResponse {
 }
 
 export interface UploadFoodResponse {
-  mobile_number: string;
+  user_email: string;
   meal_time: string;
   files_processed: number;
   filenames: string[];

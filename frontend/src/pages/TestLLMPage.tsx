@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { logger } from '../utils/logger';
+import { API_BASE_URL } from '../utils/api';
 
 const TestLLMPage: React.FC = () => {
   const [result, setResult] = useState<any>(null);
@@ -9,7 +10,7 @@ const TestLLMPage: React.FC = () => {
     setLoading(true);
     setResult(null);
 
-    const apiUrl = `${process.env.REACT_APP_API_URL}/test_llm`;
+    const apiUrl = `${API_BASE_URL}/test_llm`;
     logger.debug('Testing LLM API', { apiUrl });
 
     const timer = logger.startTimer('llm-test');

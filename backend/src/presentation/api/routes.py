@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
@@ -13,8 +13,17 @@ from ...infrastructure.utils.redis_utils import RedisClient
 
 import json
 
+API_TITLE = "Food app backend"
+API_VERSION = "0.1.0"
+API_PREFIX = "/v1"
+API_TAG = "Food App AI"
+
 # Create FastAPI app first
-app = FastAPI()
+app = FastAPI(
+    title=API_TITLE,
+    version=API_VERSION,
+)
+api_v1_router = APIRouter(prefix=API_PREFIX, tags=[API_TAG])
 
 # Add CORS middleware
 app.add_middleware(
@@ -31,12 +40,22 @@ sio = socketio.AsyncServer(
     async_mode='asgi'
 )
 
-@app.get("/")
+@app.get("/", tags=[API_TAG])
 async def read_root():
     return {"message": "Hello from prodmeasure!"}
 
 
-@app.get("/get_report/{user_id}")
+@app.get("/health", tags=[API_TAG])
+@api_v1_router.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": API_TITLE,
+        "version": API_VERSION,
+    }
+
+
+@api_v1_router.get("/get_report/{user_id}")
 async def get_report(user_id: str):
     """Get saved report data for user"""
     redis_client = RedisClient()
@@ -52,7 +71,7 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 
-@app.post("/upload_food/")
+@api_v1_router.post("/upload_food/")
 async def upload_food(
     mobile_or_email: str = Form(..., description="User's mobile/email"),
     meal_time: str = Form(..., description="Meal time: breakfast, lunch, dinner, snack"),
@@ -131,7 +150,7 @@ async def upload_food(
         raise HTTPException(status_code=500, detail=f"Error processing food images: {str(e)}")
 
 
-@app.delete("/delete_report/{user_id}")
+@api_v1_router.delete("/delete_report/{user_id}")
 async def delete_report(user_id: str):
     """Delete saved report data for user"""
     redis_client = RedisClient()
@@ -143,7 +162,7 @@ async def delete_report(user_id: str):
     return {"message": f"Report data deleted for user: {user_id}"}
 
 
-@app.get("/debug/redis/{user_id}")
+@api_v1_router.get("/debug/redis/{user_id}")
 async def debug_redis(user_id: str):
     """Debug Redis connection and data"""
     redis_client = RedisClient()
@@ -170,7 +189,7 @@ async def debug_redis(user_id: str):
         }
 
 
-@app.post("/upload_report/")
+@api_v1_router.post("/upload_report/")
 async def upload_report(
     mobile_or_email: str = Form(..., description="User's mobile/email"),
     files: List[UploadFile] = File(..., description="Image or PDF files"),
@@ -232,7 +251,7 @@ async def upload_report(
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
 
-@app.get("/get_nutrition/{user_id}")
+@api_v1_router.get("/get_nutrition/{user_id}")
 async def get_nutrition(user_id: str):
     """Get saved nutrition data for user"""
     redis_client = RedisClient()
@@ -245,7 +264,7 @@ async def get_nutrition(user_id: str):
 
     return data
 
-@app.get("/test_llm")
+@api_v1_router.get("/test_llm")
 async def test_llm_connection():
     """Test LLM connection with simple query"""
     try:
@@ -266,7 +285,7 @@ async def test_llm_connection():
             "error": str(e)
         }
 
-@app.get("/test-llm")
+@app.get("/test-llm", tags=[API_TAG])
 async def test_llm_ui():
     """Serve test LLM UI page"""
     from fastapi.responses import HTMLResponse
@@ -296,7 +315,7 @@ async def test_llm_ui():
                 resultDiv.innerHTML = '<div class="loading">Testing LLM connection...</div>';
                 
                 try {
-                    const response = await fetch('/test_llm');
+                    const response = await fetch('/v1/test_llm');
                     const data = await response.json();
                     
                     if (data.status === 'success') {
@@ -330,3 +349,6 @@ async def test_llm_ui():
     """
     
     return HTMLResponse(content=html_content)
+
+
+app.include_router(api_v1_router)

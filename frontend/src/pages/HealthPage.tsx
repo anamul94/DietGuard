@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { logger } from '../utils/logger';
+import { API_BASE_URL } from '../utils/api';
 
 const HealthPage: React.FC = () => {
   const [healthStatus, setHealthStatus] = useState<any>(null);
@@ -11,7 +12,7 @@ const HealthPage: React.FC = () => {
     const checkHealth = async () => {
       try {
         logger.info('Fetching health status from backend');
-        const response = await axios.get(`${process.env.REACT_APP_API_URL}/health`);
+        const response = await axios.get(`${API_BASE_URL}/health`);
         logger.info('Health status received', response.data);
         setHealthStatus(response.data);
       } catch (err: any) {
